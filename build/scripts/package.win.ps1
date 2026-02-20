@@ -24,7 +24,7 @@ ArchitecturesInstallIn64BitMode=x64compatible arm64
 Name: "desktopicon"; Description: "Create a &desktop icon"; GroupDescription: "Additional icons:"
 
 [Files]
-Source: "build\SourceGit\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "SourceGit\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autodesktop}\SourceGit"; Filename: "{app}\SourceGit.exe"; Tasks: desktopicon
