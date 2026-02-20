@@ -36,7 +36,7 @@ jobs:
           name: package.${{ matrix.runtime }}
           path: |
             build/sourcegit_*.zip
-            build/sourcegit_*.setup.exe
+            build/build/sourcegit_*.setup.exe
       - name: Delete temp artifacts
         uses: geekyeggo/delete-artifact@v5
         with:
