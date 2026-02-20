@@ -22,6 +22,7 @@ jobs:
           name: sourcegit.${{ matrix.runtime }}
           path: build/SourceGit
       - name: Install Inno Setup
+        if: runner.os == 'Windows'
         run: choco install innosetup --no-progress -y
       - name: Package
         shell: pwsh
