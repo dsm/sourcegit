@@ -27,11 +27,23 @@ namespace SourceGit.Models
             set;
         } = true;
 
-        public bool IsDateTimeColumnVisibleInHistory
+        public bool IsAuthorTimeColumnVisibleInHistory
+        {
+            get;
+            set;
+        } = false;
+
+        public bool IsCommitTimeColumnVisibleInHistory
         {
             get;
             set;
         } = true;
+
+        public double AuthorColumnWidth
+        {
+            get;
+            set;
+        } = 120;
 
         public bool EnableTopoOrderInHistory
         {
@@ -39,11 +51,11 @@ namespace SourceGit.Models
             set;
         } = false;
 
-        public bool OnlyHighlightCurrentBranchInHistory
+        public CommitGraphHighlighting GraphHighlighting
         {
             get;
             set;
-        } = false;
+        } = CommitGraphHighlighting.All;
 
         public BranchSortMode LocalBranchSortMode
         {
@@ -116,6 +128,12 @@ namespace SourceGit.Models
             get;
             set;
         } = false;
+
+        public bool CreateAnnotatedTag
+        {
+            get;
+            set;
+        } = true;
 
         public bool PushToRemoteWhenCreateTag
         {
@@ -213,12 +231,24 @@ namespace SourceGit.Models
             set;
         } = [];
 
+        public bool IsHistoryFiltersCollapsed
+        {
+            get;
+            set;
+        } = false;
+
+        public List<string> RecentCommitMessages
+        {
+            get;
+            set;
+        } = [];
+
         public static RepositoryUIStates Load(string gitDir)
         {
             var fileInfo = new FileInfo(Path.Combine(gitDir, "sourcegit.uistates"));
             var fullpath = fileInfo.FullName;
 
-            RepositoryUIStates states = null;
+            RepositoryUIStates states;
             if (!File.Exists(fullpath))
             {
                 states = new RepositoryUIStates();
@@ -240,13 +270,14 @@ namespace SourceGit.Models
             return states;
         }
 
-        public void Unload(string lastCommitMessage)
+        public void Save()
         {
             try
             {
-                LastCommitMessage = lastCommitMessage;
-                using var stream = File.Create(_file);
-                JsonSerializer.Serialize(stream, this, JsonCodeGen.Default.RepositoryUIStates);
+                var content = JsonSerializer.Serialize(this, JsonCodeGen.Default.RepositoryUIStates);
+                var tmpfile = $"{_file}.tmp";
+                File.WriteAllText(tmpfile, content);
+                File.Move(tmpfile, _file, true);
             }
             catch
             {
@@ -345,7 +376,7 @@ namespace SourceGit.Models
                 if (filter.Type == FilterType.LocalBranch &&
                     filter.Pattern.Equals(oldName, StringComparison.Ordinal))
                 {
-                    filter.Pattern = $"refs/heads/{newName}";
+                    filter.Pattern = newName;
                     break;
                 }
             }
@@ -369,51 +400,8 @@ namespace SourceGit.Models
                 HistoryFilters.Remove(filter);
         }
 
-        public string BuildHistoryParams()
+        public string BuildHistoryParams(string gitDir)
         {
-            var includedRefs = new List<string>();
-            var excludedBranches = new List<string>();
-            var excludedRemotes = new List<string>();
-            var excludedTags = new List<string>();
-            foreach (var filter in HistoryFilters)
-            {
-                if (filter.Type == FilterType.LocalBranch)
-                {
-                    if (filter.Mode == FilterMode.Included)
-                        includedRefs.Add(filter.Pattern);
-                    else if (filter.Mode == FilterMode.Excluded)
-                        excludedBranches.Add($"--exclude=\"{filter.Pattern.AsSpan(11)}\" --decorate-refs-exclude=\"{filter.Pattern}\"");
-                }
-                else if (filter.Type == FilterType.LocalBranchFolder)
-                {
-                    if (filter.Mode == FilterMode.Included)
-                        includedRefs.Add($"--branches={filter.Pattern.AsSpan(11)}/*");
-                    else if (filter.Mode == FilterMode.Excluded)
-                        excludedBranches.Add($"--exclude=\"{filter.Pattern.AsSpan(11)}/*\" --decorate-refs-exclude=\"{filter.Pattern}/*\"");
-                }
-                else if (filter.Type == FilterType.RemoteBranch)
-                {
-                    if (filter.Mode == FilterMode.Included)
-                        includedRefs.Add(filter.Pattern);
-                    else if (filter.Mode == FilterMode.Excluded)
-                        excludedRemotes.Add($"--exclude=\"{filter.Pattern.AsSpan(13)}\" --decorate-refs-exclude=\"{filter.Pattern}\"");
-                }
-                else if (filter.Type == FilterType.RemoteBranchFolder)
-                {
-                    if (filter.Mode == FilterMode.Included)
-                        includedRefs.Add($"--remotes={filter.Pattern.AsSpan(13)}/*");
-                    else if (filter.Mode == FilterMode.Excluded)
-                        excludedRemotes.Add($"--exclude=\"{filter.Pattern.AsSpan(13)}/*\" --decorate-refs-exclude=\"{filter.Pattern}/*\"");
-                }
-                else if (filter.Type == FilterType.Tag)
-                {
-                    if (filter.Mode == FilterMode.Included)
-                        includedRefs.Add($"refs/tags/{filter.Pattern}");
-                    else if (filter.Mode == FilterMode.Excluded)
-                        excludedTags.Add($"--exclude=\"{filter.Pattern}\" --decorate-refs-exclude=\"refs/tags/{filter.Pattern}\"");
-                }
-            }
-
             var builder = new StringBuilder();
 
             if (EnableTopoOrderInHistory)
@@ -430,46 +418,95 @@ namespace SourceGit.Models
             if (HistoryShowFlags.HasFlag(HistoryShowFlags.SimplifyByDecoration))
                 builder.Append("--simplify-by-decoration ");
 
-            if (includedRefs.Count > 0)
-            {
-                foreach (var r in includedRefs)
-                {
-                    builder.Append(r);
-                    builder.Append(' ');
-                }
-            }
-            else if (excludedBranches.Count + excludedRemotes.Count + excludedTags.Count > 0)
-            {
-                foreach (var b in excludedBranches)
-                {
-                    builder.Append(b);
-                    builder.Append(' ');
-                }
-
-                builder.Append("--exclude=HEAD --branches ");
-
-                foreach (var r in excludedRemotes)
-                {
-                    builder.Append(r);
-                    builder.Append(' ');
-                }
-
-                builder.Append("--exclude=origin/HEAD --remotes ");
-
-                foreach (var t in excludedTags)
-                {
-                    builder.Append(t);
-                    builder.Append(' ');
-                }
-
-                builder.Append("--tags ");
-            }
-            else
-            {
+            var mode = GetHistoryFilterMode();
+            if (mode == FilterMode.None)
                 builder.Append("--branches --remotes --tags HEAD");
-            }
+            else if (mode == FilterMode.Included)
+                BuildHistoryParamsForIncluded(builder);
+            else
+                BuildHistoryParamsForExcluded(builder, gitDir);
 
             return builder.ToString();
+        }
+
+        private void BuildHistoryParamsForIncluded(StringBuilder builder)
+        {
+            foreach (var filter in HistoryFilters)
+            {
+                if (filter.Type == FilterType.LocalBranch)
+                    builder.Append(filter.Pattern).Append(' ');
+                else if (filter.Type == FilterType.LocalBranchFolder)
+                    builder.Append($"--branches={filter.Pattern.AsSpan(11)}/* ");
+                else if (filter.Type == FilterType.RemoteBranch)
+                    builder.Append(filter.Pattern).Append(' ');
+                else if (filter.Type == FilterType.RemoteBranchFolder)
+                    builder.Append($"--remotes={filter.Pattern.AsSpan(13)}/* ");
+                else if (filter.Type == FilterType.Tag)
+                    builder.Append($"refs/tags/{filter.Pattern} ");
+            }
+        }
+
+        private void BuildHistoryParamsForExcluded(StringBuilder builder, string gitDir)
+        {
+            var excludedBranches = new List<string>();
+            var excludedRemotes = new List<string>();
+            var excludedTags = new List<string>();
+            foreach (var filter in HistoryFilters)
+            {
+                if (filter.Type == FilterType.LocalBranch)
+                    excludedBranches.Add($"--exclude=\"{filter.Pattern.AsSpan(11)}\" --decorate-refs-exclude=\"{filter.Pattern}\" ");
+                else if (filter.Type == FilterType.LocalBranchFolder)
+                    excludedBranches.Add($"--exclude=\"{filter.Pattern.AsSpan(11)}/*\" --decorate-refs-exclude=\"{filter.Pattern}/*\" ");
+                else if (filter.Type == FilterType.RemoteBranch)
+                    excludedRemotes.Add($"--exclude=\"{filter.Pattern.AsSpan(13)}\" --decorate-refs-exclude=\"{filter.Pattern}\" ");
+                else if (filter.Type == FilterType.RemoteBranchFolder)
+                    excludedRemotes.Add($"--exclude=\"{filter.Pattern.AsSpan(13)}/*\" --decorate-refs-exclude=\"{filter.Pattern}/*\" ");
+                else if (filter.Type == FilterType.Tag)
+                    excludedTags.Add($"--exclude=\"{filter.Pattern}\" --decorate-refs-exclude=\"refs/tags/{filter.Pattern}\" ");
+            }
+
+            foreach (var b in excludedBranches)
+                builder.Append(b);
+
+            builder.Append("--branches ");
+
+            var isInProgress = File.Exists(Path.Combine(gitDir, "CHERRY_PICK_HEAD")) ||
+                Directory.Exists(Path.Combine(gitDir, "rebase-merge")) ||
+                Directory.Exists(Path.Combine(gitDir, "rebase-apply")) ||
+                File.Exists(Path.Combine(gitDir, "REVERT_HEAD")) ||
+                File.Exists(Path.Combine(gitDir, "MERGE_HEAD"));
+            if (isInProgress)
+                builder.Append("HEAD ");
+
+            foreach (var r in excludedRemotes)
+                builder.Append(r);
+
+            builder.Append("--exclude=origin/HEAD --remotes ");
+
+            foreach (var t in excludedTags)
+                builder.Append(t);
+
+            builder.Append("--tags ");
+        }
+
+        public void AddRecentCommitMessage(string message)
+        {
+            message = message.Trim().ReplaceLineEndings("\n");
+            var existIdx = RecentCommitMessages.IndexOf(message);
+            if (existIdx == 0)
+                return;
+
+            if (existIdx > 0)
+            {
+                RecentCommitMessages.RemoveAt(existIdx);
+                RecentCommitMessages.Insert(0, message);
+                return;
+            }
+
+            if (RecentCommitMessages.Count > 9)
+                RecentCommitMessages.RemoveRange(9, RecentCommitMessages.Count - 9);
+
+            RecentCommitMessages.Insert(0, message);
         }
 
         private string _file = string.Empty;

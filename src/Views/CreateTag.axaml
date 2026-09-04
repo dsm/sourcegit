@@ -19,7 +19,7 @@
                  Classes="bold"
                  Text="{DynamicResource Text.CreateTag.Title}"/>
     </StackPanel>
-    
+
     <Grid Margin="0,16,8,0" RowDefinitions="32,32,32,Auto,Auto,32" ColumnDefinitions="120,*">
       <TextBlock Grid.Row="0" Grid.Column="0"
                  HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -37,8 +37,17 @@
           <DataTemplate DataType="m:Commit">
             <Grid ColumnDefinitions="Auto,Auto,*">
               <Path Grid.Column="0" Width="14" Height="14" Data="{StaticResource Icons.Commit}"/>
-              <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="{Binding SHA, Converter={x:Static c:StringConverters.ToShortSHA}}" Foreground="DarkOrange" Margin="8,0,0,0"/>
-              <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="{Binding Subject}" Margin="4,0,0,0" TextTrimming="CharacterEllipsis"/>
+              <TextBlock Grid.Column="1"
+                         VerticalAlignment="Center"
+                         Text="{Binding SHA, Converter={x:Static c:StringConverters.ToShortSHA}}"
+                         FontFamily="{DynamicResource Fonts.Monospace}"
+                         Foreground="DarkOrange"
+                         Margin="8,0,0,0"/>
+              <TextBlock Grid.Column="2"
+                         VerticalAlignment="Center"
+                         Text="{Binding Subject}"
+                         Margin="4,0,0,0"
+                         TextTrimming="CharacterEllipsis"/>
             </Grid>
           </DataTemplate>
         </ContentControl.DataTemplates>
@@ -51,10 +60,9 @@
       <v:BranchOrTagNameTextBox Grid.Row="1" Grid.Column="1"
                                 Height="26"
                                 VerticalAlignment="Center"
-                                CornerRadius="2"
+                                CornerRadius="3"
                                 Text="{Binding TagName, Mode=TwoWay}"
-                                Watermark="{DynamicResource Text.CreateTag.Name.Placeholder}"
-                                v:AutoFocusBehaviour.IsEnabled="True"/>
+                                Watermark="{DynamicResource Text.CreateTag.Name.Placeholder}"/>
 
       <TextBlock Grid.Row="2" Grid.Column="0"
                  HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -62,10 +70,9 @@
                  Text="{DynamicResource Text.CreateTag.Type}"/>
       <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
         <RadioButton Content="{DynamicResource Text.CreateTag.Type.Annotated}"
-                     GroupName="TagKind"
                      IsChecked="{Binding Annotated, Mode=TwoWay}"/>
         <RadioButton Content="{DynamicResource Text.CreateTag.Type.Lightweight}"
-                     GroupName="TagKind"
+                     IsChecked="{Binding !Annotated, Mode=TwoWay}"
                      Margin="8,0,0,0"/>
       </StackPanel>
 
@@ -78,7 +85,7 @@
                Height="64"
                AcceptsReturn="True" AcceptsTab="False"
                VerticalAlignment="Center" VerticalContentAlignment="Top"
-               CornerRadius="2"
+               CornerRadius="3"
                Watermark="{DynamicResource Text.CreateTag.Message.Placeholder}"
                Text="{Binding Message, Mode=TwoWay}"
                IsVisible="{Binding Annotated}"

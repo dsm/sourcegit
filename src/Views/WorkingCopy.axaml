@@ -11,7 +11,7 @@
   <Grid SizeChanged="OnMainLayoutSizeChanged">
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="{Binding Source={x:Static vm:Preferences.Instance}, Path=Layout.WorkingCopyLeftWidth, Mode=TwoWay}" MinWidth="300"/>
-      <ColumnDefinition Width="5"/>
+      <ColumnDefinition Width="4"/>
       <ColumnDefinition Width="*" MinWidth="300"/>
     </Grid.ColumnDefinitions>
 
@@ -26,12 +26,14 @@
 
       <!-- Search Filter -->
       <Border Grid.Row="0" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource Brush.Border0}">
-        <TextBox Height="24"
+        <TextBox x:Name="LocalChangesSearchBox"
+                 Height="24"
                  Margin="4,0"
                  BorderThickness="1"
                  CornerRadius="12"
                  Text="{Binding Filter, Mode=TwoWay}"
                  BorderBrush="{DynamicResource Brush.Border2}"
+                 Watermark="{DynamicResource Text.WorkingCopy.FilterChanges}"
                  VerticalContentAlignment="Center">
           <TextBox.InnerLeftContent>
             <Path Width="14" Height="14"
@@ -140,10 +142,11 @@
       <GridSplitter Grid.Row="2"
                     MinHeight="1"
                     HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                    Background="{DynamicResource Brush.Border0}"/>
+                    Background="{DynamicResource Brush.Border0}"
+                    Focusable="False"/>
 
       <!-- Staged -->
-      <Grid Grid.Row="3" RowDefinitions="28,*">
+      <Grid Grid.Row="3" RowDefinitions="27,*">
         <!-- Staged Toolbar -->
         <Border Grid.Row="0" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource Brush.Border0}">
           <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto">
@@ -196,7 +199,8 @@
                   HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                   Background="Transparent"
                   BorderThickness="1,0,0,0"
-                  BorderBrush="{DynamicResource Brush.Border0}"/>
+                  BorderBrush="{DynamicResource Brush.Border0}"
+                  Focusable="False"/>
 
     <!-- Right -->
     <Grid Grid.Column="2" Margin="0,4,4,4">
@@ -236,7 +240,8 @@
       <!-- Splitter -->
       <GridSplitter Grid.Row="1" MinHeight="1"
                     HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                    Background="Transparent"/>
+                    Background="Transparent"
+                    Focusable="False"/>
 
       <!-- Commit Message -->
       <v:CommitMessageToolBox Grid.Row="2" ShowAdvancedOptions="True" CommitMessage="{Binding CommitMessage, Mode=TwoWay}"/>
@@ -351,7 +356,7 @@
               </Style>
             </Style>
           </SplitButton.Styles>
-          
+
           <SplitButton.IsEnabled>
             <MultiBinding Converter="{x:Static BoolConverters.And}">
               <Binding Path="IsCommitting" Converter="{x:Static BoolConverters.Not}"/>

@@ -9,6 +9,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using BitMiracle.LibTiff.Classic;
 using Pfim;
+using StbImageSharp;
 
 namespace SourceGit.ViewModels
 {
@@ -32,18 +33,30 @@ namespace SourceGit.ViewModels
                 ".ico" or ".bmp" or ".gif" or ".jpg" or ".jpeg" or ".png" or ".webp" => Models.ImageDecoder.Builtin,
                 ".tga" or ".dds" => Models.ImageDecoder.Pfim,
                 ".tif" or ".tiff" => Models.ImageDecoder.Tiff,
+                ".psd" => Models.ImageDecoder.StbImage,
                 _ => Models.ImageDecoder.None,
             };
         }
 
         public static async Task<ImageSource> FromFileAsync(string fullpath, Models.ImageDecoder decoder)
         {
+            if (!File.Exists(fullpath))
+                return new ImageSource(null, 0);
+
             await using var stream = File.OpenRead(fullpath);
             return await Task.Run(() => LoadFromStream(stream, decoder)).ConfigureAwait(false);
         }
 
         public static async Task<ImageSource> FromRevisionAsync(string repo, string revision, string file, Models.ImageDecoder decoder)
         {
+            // If revision is empty, it means we are reading file in worktree.
+            if (string.IsNullOrEmpty(revision))
+                return await FromFileAsync(Path.Combine(repo, file), decoder).ConfigureAwait(false);
+
+            var emptyTreeHash = Models.EmptyTreeHash.Guess(revision);
+            if (emptyTreeHash.Equals(revision, StringComparison.Ordinal))
+                return new ImageSource(null, 0);
+
             await using var stream = await Commands.QueryFileContent.RunAsync(repo, revision, file).ConfigureAwait(false);
             return await Task.Run(() => LoadFromStream(stream, decoder)).ConfigureAwait(false);
         }
@@ -77,6 +90,8 @@ namespace SourceGit.ViewModels
                             return DecodeWithPfim(stream, size);
                         case Models.ImageDecoder.Tiff:
                             return DecodeWithTiff(stream, size);
+                        case Models.ImageDecoder.StbImage:
+                            return DecodeWithStbImage(stream, size);
                     }
                 }
                 catch (Exception e)
@@ -160,11 +175,23 @@ namespace SourceGit.ViewModels
                         return new ImageSource(null, 0);
                 }
 
-                var ptr = Marshal.UnsafeAddrOfPinnedArrayElement(data, 0);
-                var pixelSize = new PixelSize(pfiImage.Width, pfiImage.Height);
-                var dpi = new Vector(96, 96);
-                var bitmap = new Bitmap(pixelFormat, alphaFormat, ptr, pixelSize, dpi, stride);
-                return new ImageSource(bitmap, size);
+                var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
+                try
+                {
+                    var ptr = Marshal.UnsafeAddrOfPinnedArrayElement(data, 0);
+                    var pixelSize = new PixelSize(pfiImage.Width, pfiImage.Height);
+                    var dpi = new Vector(96, 96);
+                    var bitmap = new Bitmap(pixelFormat, alphaFormat, ptr, pixelSize, dpi, stride);
+                    return new ImageSource(bitmap, size);
+                }
+                catch
+                {
+                    return new ImageSource(null, 0);
+                }
+                finally
+                {
+                    handle.Free();
+                }
             }
         }
 
@@ -189,6 +216,20 @@ namespace SourceGit.ViewModels
                 Marshal.Copy(pixels, 0, frameBuffer.Address, pixels.Length);
                 return new ImageSource(bitmap, size);
             }
+        }
+
+        private static ImageSource DecodeWithStbImage(Stream stream, long size)
+        {
+            var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+            var data = image.Data;
+            var stride = image.Width * (int)image.Comp;
+            var pixelSize = new PixelSize(image.Width, image.Height);
+            var dpi = new Vector(96, 96);
+            var bitmap = new WriteableBitmap(pixelSize, dpi, PixelFormats.Rgba8888, AlphaFormat.Unpremul);
+
+            using var frameBuffer = bitmap.Lock();
+            Marshal.Copy(data, 0, frameBuffer.Address, data.Length);
+            return new ImageSource(bitmap, size);
         }
     }
 }

@@ -27,11 +27,13 @@ namespace SourceGit.Models
         public string Name { get; }
         public string ExecFile { get; }
         public Bitmap IconImage { get; }
+        public bool SupportOpenFolder { get; }
 
-        public ExternalTool(string name, string icon, string execFile, Func<string, List<LaunchOption>> optionsGenerator = null)
+        public ExternalTool(string name, string icon, string execFile, Func<string, List<LaunchOption>> optionsGenerator, bool supportOpenFolder)
         {
             Name = name;
             ExecFile = execFile;
+            SupportOpenFolder = supportOpenFolder;
 
             _optionsGenerator = optionsGenerator;
 
@@ -82,30 +84,18 @@ namespace SourceGit.Models
 
     public class JetBrainsState
     {
-        [JsonPropertyName("version")]
-        public int Version { get; set; } = 0;
-        [JsonPropertyName("appVersion")]
-        public string AppVersion { get; set; } = string.Empty;
         [JsonPropertyName("tools")]
         public List<JetBrainsTool> Tools { get; set; } = new List<JetBrainsTool>();
     }
 
     public class JetBrainsTool
     {
-        [JsonPropertyName("channelId")]
-        public string ChannelId { get; set; }
-        [JsonPropertyName("toolId")]
-        public string ToolId { get; set; }
         [JsonPropertyName("productCode")]
         public string ProductCode { get; set; }
-        [JsonPropertyName("tag")]
-        public string Tag { get; set; }
         [JsonPropertyName("displayName")]
         public string DisplayName { get; set; }
         [JsonPropertyName("displayVersion")]
         public string DisplayVersion { get; set; }
-        [JsonPropertyName("buildNumber")]
-        public string BuildNumber { get; set; }
         [JsonPropertyName("installLocation")]
         public string InstallLocation { get; set; }
         [JsonPropertyName("launchCommand")]
@@ -130,7 +120,7 @@ namespace SourceGit.Models
 
         public ExternalToolsFinder()
         {
-            var customPathsConfig = Path.Combine(Native.OS.DataDir, "external_editors.json");
+            var customPathsConfig = Path.Combine(Native.OS.BasicDirectories.ConfigDir, "external_editors.json");
             try
             {
                 if (File.Exists(customPathsConfig))
@@ -147,20 +137,20 @@ namespace SourceGit.Models
             _customization ??= new ExternalToolCustomization();
         }
 
-        public void TryAdd(string name, string icon, Func<string> finder, Func<string, List<ExternalTool.LaunchOption>> optionsGenerator = null)
+        public void TryAdd(string name, string icon, Func<string> finder, Func<string, List<ExternalTool.LaunchOption>> optionsGenerator = null, bool supportOpenFolder = true)
         {
             if (_customization.Excludes.Contains(name))
                 return;
 
             if (_customization.Tools.TryGetValue(name, out var customPath) && File.Exists(customPath))
             {
-                Tools.Add(new ExternalTool(name, icon, customPath, optionsGenerator));
+                Tools.Add(new ExternalTool(name, icon, customPath, optionsGenerator, supportOpenFolder));
             }
             else
             {
                 var path = finder();
                 if (!string.IsNullOrEmpty(path) && File.Exists(path))
-                    Tools.Add(new ExternalTool(name, icon, path, optionsGenerator));
+                    Tools.Add(new ExternalTool(name, icon, path, optionsGenerator, supportOpenFolder));
             }
         }
 
@@ -196,8 +186,7 @@ namespace SourceGit.Models
 
         public void FindJetBrainsFromToolbox(Func<string> platformFinder)
         {
-            var exclude = new List<string> { "fleet", "dotmemory", "dottrace", "resharper-u", "androidstudio" };
-            var supportedIcons = new List<string> { "CL", "DB", "DL", "DS", "GO", "JB", "PC", "PS", "PY", "QA", "QD", "RD", "RM", "RR", "WRS", "WS" };
+            var supported = new List<string> { "AI", "CL", "DB", "DL", "DS", "GO", "IC", "IU", "JB", "PC", "PS", "PY", "QA", "QD", "RD", "RM", "RR", "WRS", "WS" };
             var state = Path.Combine(platformFinder(), "state.json");
             if (File.Exists(state))
             {
@@ -207,13 +196,15 @@ namespace SourceGit.Models
                     var stateData = JsonSerializer.Deserialize(stream, JsonCodeGen.Default.JetBrainsState);
                     foreach (var tool in stateData.Tools)
                     {
-                        if (exclude.Contains(tool.ToolId.ToLowerInvariant()))
+                        if (!supported.Contains(tool.ProductCode))
                             continue;
 
                         Tools.Add(new ExternalTool(
                             $"{tool.DisplayName} {tool.DisplayVersion}",
-                            supportedIcons.Contains(tool.ProductCode) ? $"JetBrains/{tool.ProductCode}" : "JetBrains/JB",
-                            Path.Combine(tool.InstallLocation, tool.LaunchCommand)));
+                            $"JetBrains/{tool.ProductCode}",
+                            Path.Combine(tool.InstallLocation, tool.LaunchCommand),
+                            null,
+                            true));
                     }
                 }
                 catch
@@ -230,10 +221,14 @@ namespace SourceGit.Models
                 return null;
 
             var options = new List<ExternalTool.LaunchOption>();
+            var prefixLen = root.FullName.Length;
             root.WalkFiles(f =>
             {
                 if (f.EndsWith(".code-workspace", StringComparison.OrdinalIgnoreCase))
-                    options.Add(new(root.GetRelativePath(f), f.Quoted()));
+                {
+                    var display = f.Substring(prefixLen).TrimStart(Path.DirectorySeparatorChar);
+                    options.Add(new(display, f.Quoted()));
+                }
             }, 2);
             return options;
         }

@@ -58,7 +58,7 @@
 * Workspace
 * Custom Action
 * Create PR on GitHub/Gitlab/Gitea/Gitee/Bitbucket...
-* Using AI to generate commit message (C# port of [anjerodev/commitollama](https://github.com/anjerodev/commitollama))
+* Using AI to generate commit message
 * Built-in conventional commit message helper.
 
 > [!WARNING]
@@ -72,11 +72,11 @@ You can download the latest stable from [Releases](https://github.com/sourcegit-
 
 This software creates a folder, which is platform-dependent, to store user settings, downloaded avatars and crash logs.
 
-| OS      | PATH                                      |
-|---------|-------------------------------------------|
-| Windows | `%APPDATA%\SourceGit`                     |
-| Linux   | `~/.sourcegit`                            |
-| macOS   | `~/Library/Application Support/SourceGit` |
+| OS      | PATH                                                                                             |
+|---------|--------------------------------------------------------------------------------------------------|
+| Windows | `%APPDATA%\SourceGit`                                                                            |
+| Linux   | `${XDG_CONFIG_HOME}/SourceGit` (preference.json) `${XDG_CACHE_HOME}/SourceGit` (avatars & logs)  |
+| macOS   | `~/Library/Application Support/SourceGit`                                                        |
 
 > [!TIP]
 > * You can open this data storage directory from the main menu `Open Data Storage Directory`.
@@ -120,6 +120,7 @@ For **Linux** users:
 
   `deb` how to:
   ```shell
+  sudo mkdir -p /etc/apt/keyrings
   curl https://codeberg.org/api/packages/yataro/debian/repository.key | sudo tee /etc/apt/keyrings/sourcegit.asc
   echo "deb [signed-by=/etc/apt/keyrings/sourcegit.asc, arch=amd64,arm64] https://codeberg.org/api/packages/yataro/debian generic main" | sudo tee /etc/apt/sources.list.d/sourcegit.list
   sudo apt update
@@ -139,6 +140,37 @@ For **Linux** users:
   ```
 
   If your distribution isn't using `dnf`, please refer to the documentation of your distribution on how to add an `rpm` repository.
+
+* Thanks [@gadfly3173](https://github.com/gadfly3173) for providing `deb` repository, hosted on https://deb-repo.gadfly.vip
+
+  ```shell
+  # Import GPG key
+  curl -fsSL https://deb-repo.gadfly.vip/public.key | sudo gpg --dearmor -o /usr/share/keyrings/deb-repo.gpg
+
+  # Add repository (DEB822 format, recommended for Bookworm+ / 22.04+)
+  echo "Types: deb
+  URIs: https://deb-repo.gadfly.vip
+  Suites: stable
+  Components: main
+  Architectures: $(dpkg --print-architecture)
+  Signed-By: /usr/share/keyrings/deb-repo.gpg" | sudo tee /etc/apt/sources.list.d/deb-repo.sources
+  
+  # Or use one‑line format for older releases:
+  # echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/deb-repo.gpg] https://deb-repo.gadfly.vip stable main" | sudo tee /  etc/apt/sources.list.d/deb-repo.list
+  
+  # Update and install
+  sudo apt update
+  sudo apt install sourcegit
+  ```
+
+* `AOSC OS`: In addition to AMD64 and ARM64, support for LoongArch and RISC-V has been added.
+  ```shell
+  sudo oma install sourcegit
+  ```
+  
+> [!NOTE]
+> RISC-V support is untested.
+
 * `AppImage` files can be found on [AppImage hub](https://appimage.github.io/SourceGit/), `xdg-open` (`xdg-utils`) must be installed to support open native file manager.
 * Make sure [git-credential-manager](https://github.com/git-ecosystem/git-credential-manager/releases) or [git-credential-libsecret](https://pkgs.org/search/?q=git-credential-libsecret) is installed on your Linux.
 * Maybe you need to set environment variable `AVALONIA_SCREEN_SCALE_FACTORS`. See https://github.com/AvaloniaUI/Avalonia/wiki/Configuring-X11-per-monitor-DPI.
@@ -150,7 +182,7 @@ Users can also launcher `SourceGit` from commandline. Usage:
 
 ```
 <SOURCEGIT_EXEC> <DIR>                       // Open repository in existing `SourceGit` instance or a new one
-<SOURCEGIT_EXEC> --file-history <FILE_PATH>  // Launch `SourceGit` to see the history of a file
+<SOURCEGIT_EXEC> --history <FILE_OR_DIR>     // Launch `SourceGit` to see the history of a file or dir
 <SOURCEGIT_EXEC> --blame <FILE_PATH>         // Launch `SourceGit` to blame a file (HEAD version only) 
 ```
 
@@ -183,7 +215,7 @@ This app supports open repository in external tools listed in the table below.
 
 > [!NOTE]
 > This app will try to find those tools based on some pre-defined or expected locations automatically. If you are using one portable version of these tools, it will not be detected by this app.  
-> To solve this problem you can add a file named `external_editors.json` in app data storage directory and provide the path directly.  
+> To solve this problem you can add a file named `external_editors.json` in app data storage directory (config dir for Linux) and provide the path directly.  
 > User can also exclude some editors by using `external_editors.json`.
 
 The format of `external_editors.json`:
@@ -226,6 +258,9 @@ You can define your own conventional commit types (per-repository) by following 
 ## Contributing
 
 Everyone is welcome to submit a PR. Please make sure your PR is based on the latest `develop` branch and the target branch of PR is `develop`.
+
+This project has a submodule in `depends/AvaloniaEdit` which is a custom fork of [Official AvaloniaEdit](https://github.com/AvaloniaUI/AvaloniaEdit). 
+Please make sure it is initialized - enable `--recurse-submodules` option while cloning or run `git submodule update --init` after cloned.
 
 In short, here are the commands to get started once [.NET tools are installed](https://dotnet.microsoft.com/en-us/download):
 

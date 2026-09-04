@@ -44,7 +44,7 @@
 
         <Popup PlacementTarget="{Binding #TxtSearchRevisionFiles}"
                Placement="BottomEdgeAlignedLeft"
-               HorizontalOffset="-8" VerticalAlignment="-8">
+               HorizontalOffset="-8" VerticalOffset="-6">
           <Popup.IsOpen>
             <MultiBinding Converter="{x:Static BoolConverters.And}">
               <Binding Path="RevisionFileSearchSuggestion" Converter="{x:Static c:ListConverters.IsNotNullOrEmpty}"/>
@@ -53,14 +53,17 @@
           </Popup.IsOpen>
 
           <Border Margin="8" VerticalAlignment="Top" Effect="drop-shadow(0 0 8 #80000000)">
-            <Border Background="{DynamicResource Brush.Popup}" CornerRadius="4" Padding="4" BorderThickness="0.65" BorderBrush="{DynamicResource Brush.Accent}">
-              <ListBox x:Name="SearchSuggestionBox"
-                       Background="Transparent"
-                       SelectionMode="Single"
-                       ItemsSource="{Binding RevisionFileSearchSuggestion}"
-                       MaxHeight="400"
-                       Focusable="True"
-                       KeyDown="OnSearchSuggestionBoxKeyDown">
+            <Border Padding="4"
+                    CornerRadius="4"
+                    Background="{DynamicResource Brush.Popup}"
+                    BorderThickness="1" BorderBrush="{DynamicResource Brush.PopupBorder}">
+              <v:ListBoxEx x:Name="SearchSuggestionBox"
+                           Background="Transparent"
+                           SelectionMode="Single"
+                           ItemsSource="{Binding RevisionFileSearchSuggestion}"
+                           MaxHeight="400"
+                           Focusable="True"
+                           KeyDown="OnSearchSuggestionBoxKeyDown">
                 <ListBox.Styles>
                   <Style Selector="ListBoxItem">
                     <Setter Property="Padding" Value="0"/>
@@ -85,16 +88,20 @@
 
                 <ListBox.ItemTemplate>
                   <DataTemplate DataType="x:String">
-                    <StackPanel Background="Transparent" Orientation="Vertical" Margin="8,4" DoubleTapped="OnSearchSuggestionDoubleTapped">
-                      <StackPanel Orientation="Horizontal">
+                    <StackPanel Background="Transparent" Orientation="Vertical" Margin="8,4" Tapped="OnSearchSuggestionTapped">
+                      <StackPanel Orientation="Horizontal" IsHitTestVisible="False">
                         <Path Width="12" Height="12" Data="{StaticResource Icons.File}"/>
                         <TextBlock Margin="6,0,0,0" Text="{Binding Converter={x:Static c:PathConverters.PureFileName}}"/>
                       </StackPanel>
-                      <TextBlock FontSize="12" Margin="18,2,0,0" Foreground="{DynamicResource Brush.FG2}" Text="{Binding Converter={x:Static c:PathConverters.PureDirectoryName}}"/>
+                      <TextBlock FontSize="12"
+                                 Margin="18,2,0,0"
+                                 Foreground="{DynamicResource Brush.FG2}"
+                                 Text="{Binding Converter={x:Static c:PathConverters.PureDirectoryName}}"
+                                 IsHitTestVisible="False"/>
                     </StackPanel>
                   </DataTemplate>
                 </ListBox.ItemTemplate>
-              </ListBox>
+              </v:ListBoxEx>
             </Border>
           </Border>
         </Popup>
@@ -102,14 +109,15 @@
 
       <!-- File Tree -->
       <Border Grid.Row="1" Margin="0,4,0,0" BorderBrush="{DynamicResource Brush.Border2}" BorderThickness="1" Background="{DynamicResource Brush.Contents}">
-        <v:RevisionFileTreeView x:Name="FileTree" Revision="{Binding Commit.SHA}"/>
+        <v:RevisionFileTreeView x:Name="FileTree" Revision="{Binding Commit.SHA, FallbackValue={x:Null}}" SearchRequested="OnToggleSearch"/>
       </Border>
     </Grid>
 
     <GridSplitter Grid.Column="1"
                   MinWidth="1"
                   HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                  Background="Transparent"/>
+                  Background="Transparent"
+                  Focusable="False"/>
 
     <!-- Right: File Content Viewer -->
     <Grid Grid.Column="2">
@@ -119,30 +127,14 @@
                   Height="26"
                   BorderBrush="{DynamicResource Brush.Border2}" BorderThickness="0,0,0,1"
                   IsVisible="{Binding ViewRevisionFilePath, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+            <Grid ColumnDefinitions="Auto,*,Auto">
               <Path Grid.Column="0" Width="12" Height="12" Data="{StaticResource Icons.File}" Margin="8,0,0,0"/>
               <TextBlock Grid.Column="1"
                          Margin="4,0,0,0"
                          Text="{Binding ViewRevisionFilePath}"
                          FontSize="11"
                          TextTrimming="CharacterEllipsis"/>
-
-              <ToggleButton Grid.Column="2"
-                            Classes="line_path"
-                            Width="28"
-                            Background="Transparent"
-                            IsChecked="{Binding Source={x:Static vm:Preferences.Instance}, Path=UseSyntaxHighlighting, Mode=TwoWay}"
-                            ToolTip.Tip="{DynamicResource Text.Diff.SyntaxHighlight}">
-                <ToggleButton.IsVisible>
-                  <Binding Path="ViewRevisionFileContent"
-                           Mode="OneWay"
-                           Converter="{x:Static c:ObjectConverters.IsTypeOf}"
-                           ConverterParameter="{x:Type m:RevisionTextFile}"/>
-                </ToggleButton.IsVisible>
-                <Path Width="13" Height="13" Data="{StaticResource Icons.SyntaxHighlight}" Margin="0,2,0,0"/>
-              </ToggleButton>
-
-              <Button Grid.Column="3"
+              <Button Grid.Column="2"
                       Classes="icon_button"
                       Width="28"
                       Background="Transparent"

@@ -5,54 +5,68 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 
 namespace SourceGit.Views
 {
     public partial class CommitBaseInfo : UserControl
     {
-        public static readonly StyledProperty<Models.CommitFullMessage> FullMessageProperty =
-            AvaloniaProperty.Register<CommitBaseInfo, Models.CommitFullMessage>(nameof(FullMessage));
+        public static readonly DirectProperty<CommitBaseInfo, Models.CommitFullMessage> FullMessageProperty =
+            AvaloniaProperty.RegisterDirect<CommitBaseInfo, Models.CommitFullMessage>(
+                nameof(FullMessage),
+                static o => o.FullMessage,
+                static (o, v) => o.FullMessage = v);
 
         public Models.CommitFullMessage FullMessage
         {
-            get => GetValue(FullMessageProperty);
-            set => SetValue(FullMessageProperty, value);
+            get => _fullMessage;
+            set => SetAndRaise(FullMessageProperty, ref _fullMessage, value);
         }
 
-        public static readonly StyledProperty<Models.CommitSignInfo> SignInfoProperty =
-            AvaloniaProperty.Register<CommitBaseInfo, Models.CommitSignInfo>(nameof(SignInfo));
+        public static readonly DirectProperty<CommitBaseInfo, Models.CommitSignInfo> SignInfoProperty =
+            AvaloniaProperty.RegisterDirect<CommitBaseInfo, Models.CommitSignInfo>(
+                nameof(SignInfo),
+                static o => o.SignInfo,
+                static (o, v) => o.SignInfo = v);
 
         public Models.CommitSignInfo SignInfo
         {
-            get => GetValue(SignInfoProperty);
-            set => SetValue(SignInfoProperty, value);
+            get => _signInfo;
+            set => SetAndRaise(SignInfoProperty, ref _signInfo, value);
         }
 
-        public static readonly StyledProperty<bool> SupportsContainsInProperty =
-            AvaloniaProperty.Register<CommitBaseInfo, bool>(nameof(SupportsContainsIn));
-
-        public bool SupportsContainsIn
-        {
-            get => GetValue(SupportsContainsInProperty);
-            set => SetValue(SupportsContainsInProperty, value);
-        }
-
-        public static readonly StyledProperty<List<Models.CommitLink>> WebLinksProperty =
-            AvaloniaProperty.Register<CommitBaseInfo, List<Models.CommitLink>>(nameof(WebLinks));
+        public static readonly DirectProperty<CommitBaseInfo, List<Models.CommitLink>> WebLinksProperty =
+            AvaloniaProperty.RegisterDirect<CommitBaseInfo, List<Models.CommitLink>>(
+                nameof(WebLinks),
+                static o => o.WebLinks,
+                static (o, v) => o.WebLinks = v);
 
         public List<Models.CommitLink> WebLinks
         {
-            get => GetValue(WebLinksProperty);
-            set => SetValue(WebLinksProperty, value);
+            get => _webLinks;
+            set => SetAndRaise(WebLinksProperty, ref _webLinks, value);
         }
 
-        public static readonly StyledProperty<List<string>> ChildrenProperty =
-            AvaloniaProperty.Register<CommitBaseInfo, List<string>>(nameof(Children));
+        public static readonly DirectProperty<CommitBaseInfo, bool> IsSHACopiedProperty =
+            AvaloniaProperty.RegisterDirect<CommitBaseInfo, bool>(
+                nameof(IsSHACopied),
+                static o => o.IsSHACopied);
 
-        public List<string> Children
+        public bool IsSHACopied
         {
-            get => GetValue(ChildrenProperty);
-            set => SetValue(ChildrenProperty, value);
+            get => _isSHACopied;
+            private set => SetAndRaise(IsSHACopiedProperty, ref _isSHACopied, value);
+        }
+
+        public static readonly DirectProperty<CommitBaseInfo, bool> SupportsContainsInProperty =
+            AvaloniaProperty.RegisterDirect<CommitBaseInfo, bool>(
+                nameof(SupportsContainsIn),
+                static o => o.SupportsContainsIn);
+
+        public bool SupportsContainsIn
+        {
+            get => _supportsContainsIn;
+            private set => SetAndRaise(SupportsContainsInProperty, ref _supportsContainsIn, value);
         }
 
         public CommitBaseInfo()
@@ -60,11 +74,78 @@ namespace SourceGit.Views
             InitializeComponent();
         }
 
+        protected override void OnDataContextChanged(EventArgs e)
+        {
+            base.OnDataContextChanged(e);
+            SupportsContainsIn = DataContext is ViewModels.CommitDetail;
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+
+            if (change.Property == ContentProperty)
+            {
+                IsSHACopied = false;
+                _iconResetTimer?.Stop();
+            }
+        }
+
+        protected override void OnLoaded(RoutedEventArgs e)
+        {
+            base.OnLoaded(e);
+
+            _iconResetTimer = new DispatcherTimer();
+            _iconResetTimer.Interval = TimeSpan.FromSeconds(1);
+            _iconResetTimer.Tag = this;
+            _iconResetTimer.Tick += static (o, _) =>
+            {
+                if (o is DispatcherTimer { Tag: CommitBaseInfo view } timer)
+                {
+                    if (view.IsSHACopied)
+                        view.IsSHACopied = false;
+
+                    timer.IsEnabled = false;
+                }
+            };
+            _iconResetTimer.IsEnabled = false;
+        }
+
+        protected override void OnUnloaded(RoutedEventArgs e)
+        {
+            _iconResetTimer.Tag = null;
+            _iconResetTimer.IsEnabled = false;
+
+            base.OnUnloaded(e);
+        }
+
+        private void OnDateTimeContextMenuRequested(object sender, ContextRequestedEventArgs e)
+        {
+            if (sender is DateTimePresenter presenter)
+            {
+                var copy = new MenuItem();
+                copy.Header = App.Text("Copy");
+                copy.Icon = this.CreateMenuIcon("Icons.Copy");
+                copy.Click += async (_, ev) =>
+                {
+                    await this.CopyTextAsync(presenter.Text);
+                    ev.Handled = true;
+                };
+
+                var menu = new ContextMenu();
+                menu.Items.Add(copy);
+                menu.Open(presenter);
+                e.Handled = true;
+            }
+        }
+
         private async void OnCopyCommitSHA(object sender, RoutedEventArgs e)
         {
             if (sender is Button { DataContext: Models.Commit commit })
-                await App.CopyTextAsync(commit.SHA);
+                await this.CopyTextAsync(commit.SHA);
 
+            IsSHACopied = true;
+            _iconResetTimer?.Start();
             e.Handled = true;
         }
 
@@ -144,6 +225,26 @@ namespace SourceGit.Views
             e.Handled = true;
         }
 
+        private void OnSHAContextRequested(object sender, ContextRequestedEventArgs e)
+        {
+            if (sender is not Control { DataContext: string sha } control)
+                return;
+
+            var copy = new MenuItem();
+            copy.Header = App.Text("Copy");
+            copy.Icon = this.CreateMenuIcon("Icons.Copy");
+            copy.Click += async (_, ev) =>
+            {
+                await this.CopyTextAsync(sha);
+                ev.Handled = true;
+            };
+
+            var menu = new ContextMenu();
+            menu.Items.Add(copy);
+            menu.Open(control);
+            e.Handled = true;
+        }
+
         private void OnUserContextRequested(object sender, ContextRequestedEventArgs e)
         {
             if (sender is not Control { Tag: Models.User user } control)
@@ -151,28 +252,28 @@ namespace SourceGit.Views
 
             var copyName = new MenuItem();
             copyName.Header = App.Text("CommitDetail.Info.CopyName");
-            copyName.Icon = App.CreateMenuIcon("Icons.Copy");
+            copyName.Icon = this.CreateMenuIcon("Icons.Copy");
             copyName.Click += async (_, ev) =>
             {
-                await App.CopyTextAsync(user.Name);
+                await this.CopyTextAsync(user.Name);
                 ev.Handled = true;
             };
 
             var copyEmail = new MenuItem();
             copyEmail.Header = App.Text("CommitDetail.Info.CopyEmail");
-            copyEmail.Icon = App.CreateMenuIcon("Icons.Email");
+            copyEmail.Icon = this.CreateMenuIcon("Icons.Email");
             copyEmail.Click += async (_, ev) =>
             {
-                await App.CopyTextAsync(user.Email);
+                await this.CopyTextAsync(user.Email);
                 ev.Handled = true;
             };
 
             var copyUser = new MenuItem();
             copyUser.Header = App.Text("CommitDetail.Info.CopyNameAndEmail");
-            copyUser.Icon = App.CreateMenuIcon("Icons.User");
+            copyUser.Icon = this.CreateMenuIcon("Icons.User");
             copyUser.Click += async (_, ev) =>
             {
-                await App.CopyTextAsync(user.ToString());
+                await this.CopyTextAsync(user.ToString());
                 ev.Handled = true;
             };
 
@@ -183,5 +284,46 @@ namespace SourceGit.Views
             menu.Open(control);
             e.Handled = true;
         }
+
+        private async void OnCopyAllCommitMessage(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is ViewModels.CommitDetail detail)
+                await this.CopyTextAsync(detail.FullMessage.Message);
+            e.Handled = true;
+        }
+
+        private void OnCommitRefsPresenterPointerReleased(object sender, PointerReleasedEventArgs e)
+        {
+            e.Handled = true;
+
+            if (DataContext is ViewModels.CommitDetail &&
+                sender is CommitRefsPresenter presenter &&
+                e.Properties.PointerUpdateKind == PointerUpdateKind.RightButtonReleased)
+            {
+                var decorator = presenter.DecoratorAt(e.GetPosition(presenter));
+                if (decorator != null)
+                {
+                    var copy = new MenuItem();
+                    copy.Icon = this.CreateMenuIcon("Icons.Copy");
+                    copy.Header = App.Text("Copy");
+                    copy.Click += async (_, ev) =>
+                    {
+                        await this.CopyTextAsync(decorator.Name);
+                        ev.Handled = true;
+                    };
+
+                    var menu = new ContextMenu();
+                    menu.Items.Add(copy);
+                    menu.Open(presenter);
+                }
+            }
+        }
+
+        private Models.CommitFullMessage _fullMessage = null;
+        private Models.CommitSignInfo _signInfo = null;
+        private bool _supportsContainsIn = false;
+        private List<Models.CommitLink> _webLinks = null;
+        private bool _isSHACopied = false;
+        private DispatcherTimer _iconResetTimer = null;
     }
 }

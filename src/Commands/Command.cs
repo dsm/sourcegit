@@ -62,7 +62,7 @@ namespace SourceGit.Commands
                         lock (capturedLock)
                         {
                             if (captured is { Process: { HasExited: false } })
-                                captured.Process.Kill();
+                                Native.OS.TerminateProcess(captured.Process);
                         }
                     });
                 }
@@ -70,7 +70,7 @@ namespace SourceGit.Commands
             catch (Exception e)
             {
                 if (RaiseError)
-                    App.RaiseException(Context, e.Message);
+                    RaiseException(e.Message);
 
                 Log?.AppendLine(string.Empty);
                 return false;
@@ -101,7 +101,7 @@ namespace SourceGit.Commands
                 {
                     var errMsg = string.Join("\n", errs).Trim();
                     if (!string.IsNullOrEmpty(errMsg))
-                        App.RaiseException(Context, errMsg);
+                        RaiseException(errMsg);
                 }
 
                 return false;
@@ -158,39 +158,13 @@ namespace SourceGit.Commands
 
         protected ProcessStartInfo CreateGitStartInfo(bool redirect)
         {
-            var start = new ProcessStartInfo();
-            start.FileName = Native.OS.GitExecutable;
-            start.UseShellExecute = false;
-            start.CreateNoWindow = true;
-
-            if (redirect)
-            {
-                start.RedirectStandardOutput = true;
-                start.RedirectStandardError = true;
-                start.StandardOutputEncoding = Encoding.UTF8;
-                start.StandardErrorEncoding = Encoding.UTF8;
-            }
-
-            // Force using this app as SSH askpass program
-            var selfExecFile = Process.GetCurrentProcess().MainModule!.FileName;
-            start.Environment.Add("SSH_ASKPASS", selfExecFile); // Can not use parameter here, because it invoked by SSH with `exec`
-            start.Environment.Add("SSH_ASKPASS_REQUIRE", "prefer");
-            start.Environment.Add("SOURCEGIT_LAUNCH_AS_ASKPASS", "TRUE");
-            if (!OperatingSystem.IsLinux())
-                start.Environment.Add("DISPLAY", "required");
-
-            // If an SSH private key was provided, sets the environment.
-            if (!start.Environment.ContainsKey("GIT_SSH_COMMAND") && !string.IsNullOrEmpty(SSHKey))
-                start.Environment.Add("GIT_SSH_COMMAND", $"ssh -i '{SSHKey}' -F '/dev/null'");
-
-            // Force using en_US.UTF-8 locale
-            if (OperatingSystem.IsLinux())
-            {
-                start.Environment.Add("LANG", "C");
-                start.Environment.Add("LC_ALL", "C");
-            }
-
+            var useSetSid = CancellationToken.CanBeCanceled && Native.OS.SupportSetSid();
+            var selfExecFile = Environment.ProcessPath;
             var builder = new StringBuilder(2048);
+
+            if (useSetSid)
+                builder.Append(Native.OS.GitExecutable.Quoted()).Append(' ');
+
             builder
                 .Append("--no-pager -c core.quotepath=off -c credential.helper=")
                 .Append(Native.OS.CredentialHelper)
@@ -210,13 +184,49 @@ namespace SourceGit.Commands
             }
 
             builder.Append(Args);
+
+            var start = new ProcessStartInfo();
+            start.FileName = useSetSid ? Native.OS.GetSetSidExecutable() : Native.OS.GitExecutable;
             start.Arguments = builder.ToString();
+            start.UseShellExecute = false;
+            start.CreateNoWindow = true;
+
+            if (redirect)
+            {
+                start.RedirectStandardOutput = true;
+                start.RedirectStandardError = true;
+                start.StandardOutputEncoding = Encoding.UTF8;
+                start.StandardErrorEncoding = Encoding.UTF8;
+            }
+
+            // Force using this app as SSH askpass program
+            start.Environment.Add("SSH_ASKPASS", selfExecFile); // Can not use parameter here, because it invoked by SSH with `exec`
+            start.Environment.Add("SSH_ASKPASS_REQUIRE", "prefer");
+            start.Environment.Add("SOURCEGIT_LAUNCH_AS_ASKPASS", "TRUE");
+            if (!OperatingSystem.IsLinux())
+                start.Environment.Add("DISPLAY", "required");
+
+            // If an SSH private key was provided, sets the environment.
+            if (!start.Environment.ContainsKey("GIT_SSH_COMMAND") && !string.IsNullOrEmpty(SSHKey))
+                start.Environment.Add("GIT_SSH_COMMAND", $"ssh -i '{SSHKey}' -o AddKeysToAgent=yes");
+
+            // Force using en_US.UTF-8 locale
+            if (OperatingSystem.IsLinux())
+            {
+                start.Environment.Add("LANG", "C");
+                start.Environment.Add("LC_ALL", "C");
+            }
 
             // Working directory
             if (!string.IsNullOrEmpty(WorkingDirectory))
                 start.WorkingDirectory = WorkingDirectory;
 
             return start;
+        }
+
+        protected void RaiseException(string error)
+        {
+            Models.Notification.Send(Context, error, true);
         }
 
         private void HandleOutput(string line, List<string> errs)

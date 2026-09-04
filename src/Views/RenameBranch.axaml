@@ -17,7 +17,7 @@
                  Classes="bold"
                  Text="{DynamicResource Text.RenameBranch}"/>
     </StackPanel>
-    
+
     <Grid Margin="0,16,0,0" RowDefinitions="32,32" ColumnDefinitions="120,*">
       <TextBlock Grid.Row="0" Grid.Column="0"
                  HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -35,10 +35,9 @@
       <v:BranchOrTagNameTextBox Grid.Row="1" Grid.Column="1"
                                 Height="26"
                                 VerticalAlignment="Center"
-                                CornerRadius="2"
+                                CornerRadius="3"
                                 Text="{Binding Name, Mode=TwoWay}"
-                                Watermark="{DynamicResource Text.RenameBranch.Name.Placeholder}"
-                                v:AutoFocusBehaviour.IsEnabled="True"/>
+                                Watermark="{DynamicResource Text.RenameBranch.Name.Placeholder}"/>
     </Grid>
   </StackPanel>
 </UserControl>

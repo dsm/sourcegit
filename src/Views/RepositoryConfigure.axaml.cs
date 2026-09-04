@@ -40,8 +40,8 @@ namespace SourceGit.Views
         {
             var options = new FilePickerOpenOptions()
             {
-                FileTypeFilter = [new FilePickerFileType("Executable file(script)") { Patterns = ["*.*"] }],
                 AllowMultiple = false,
+                FileTypeFilter = [new("Executable file(script)") { Patterns = ["*"] }]
             };
 
             var selected = await StorageProvider.OpenFilePickerAsync(options);
@@ -56,12 +56,7 @@ namespace SourceGit.Views
             if (sender is not Button { DataContext: Models.CustomAction act })
                 return;
 
-            var dialog = new ConfigureCustomActionControls()
-            {
-                DataContext = new ViewModels.ConfigureCustomActionControls(act.Controls)
-            };
-
-            await dialog.ShowDialog(this);
+            await this.ShowDialogAsync(new ViewModels.ConfigureCustomActionControls(act.Controls));
             e.Handled = true;
         }
 

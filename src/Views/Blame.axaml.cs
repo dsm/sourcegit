@@ -32,12 +32,15 @@ namespace SourceGit.Views
                 if (_editor.BlameData == null)
                     return;
 
+                _shaHitBoxes.Clear();
+
                 var view = TextView;
                 if (view is { VisualLinesValid: true })
                 {
                     var typeface = view.CreateTypeface();
-                    var underlinePen = new Pen(Brushes.DarkOrange);
                     var width = Bounds.Width;
+                    var lineHeight = view.DefaultLineHeight;
+                    var pixelHeight = PixelSnapHelpers.GetPixelSize(view).Height;
 
                     foreach (var line in view.VisualLines)
                     {
@@ -49,9 +52,24 @@ namespace SourceGit.Views
                             break;
 
                         var info = _editor.BlameData.LineInfos[lineNumber - 1];
-                        var x = 0.0;
-                        var y = line.GetTextLineVisualYPosition(line.TextLines[0], VisualYPosition.TextTop) - view.VerticalOffset;
-                        if (!info.IsFirstInGroup && y > view.DefaultLineHeight * 0.6)
+                        var x = 8.0;
+                        var lineTop = line.GetTextLineVisualYPosition(line.TextLines[0], VisualYPosition.LineTop) - view.VerticalOffset;
+                        var y = line.GetTextLineVisualYPosition(line.TextLines[0], VisualYPosition.LineMiddle) - view.VerticalOffset;
+
+                        var forceDrawFirstVisualLine = lineTop < 0;
+                        if (forceDrawFirstVisualLine)
+                        {
+                            // When there is enough space (the 2nd visual line is not a group leader),
+                            // move the line to make sure it is not cropped
+                            if (lineNumber < _editor.BlameData.LineInfos.Count)
+                            {
+                                var nextLineInfo = _editor.BlameData.LineInfos[lineNumber];
+                                if (!nextLineInfo.IsFirstInGroup)
+                                    y = lineHeight * 0.5;
+                            }
+                        }
+
+                        if (!info.IsFirstInGroup && !forceDrawFirstVisualLine)
                             continue;
 
                         var shaLink = new FormattedText(
@@ -61,8 +79,8 @@ namespace SourceGit.Views
                             typeface,
                             _editor.FontSize,
                             Brushes.DarkOrange);
-                        context.DrawText(shaLink, new Point(x, y));
-                        context.DrawLine(underlinePen, new Point(x, y + shaLink.Baseline + 2), new Point(x + shaLink.Width, y + shaLink.Baseline + 2));
+                        var shaLinkMiddle = y - shaLink.Height * 0.5;
+                        context.DrawText(shaLink, new Point(x, shaLinkMiddle));
                         x += shaLink.Width + 8;
 
                         var author = new FormattedText(
@@ -72,16 +90,25 @@ namespace SourceGit.Views
                             typeface,
                             _editor.FontSize,
                             _editor.Foreground);
-                        context.DrawText(author, new Point(x, y));
+                        var authorTop = y - author.Height * 0.5;
+                        context.DrawText(author, new Point(x, authorTop));
 
+                        var timeStr = Models.DateTimeFormat.Format(info.Timestamp, true);
                         var time = new FormattedText(
-                            info.Time,
+                            timeStr,
                             CultureInfo.CurrentCulture,
                             FlowDirection.LeftToRight,
                             typeface,
                             _editor.FontSize,
                             _editor.Foreground);
-                        context.DrawText(time, new Point(width - time.Width, y));
+                        var timeTop = y - time.Height * 0.5;
+                        context.DrawText(time, new Point(width - time.Width - 8, timeTop));
+
+                        if (lineNumber > 1)
+                            context.DrawLine(new Pen(_editor.BorderBrush, 1), new Point(0, lineTop), new Point(Bounds.Width, lineTop));
+
+                        var hitBox = new HitBox(new Rect(8, lineTop, shaLink.Width, lineHeight), info);
+                        _shaHitBoxes.Add(hitBox);
                     }
                 }
             }
@@ -94,14 +121,8 @@ namespace SourceGit.Views
                 {
                     var typeface = view.CreateTypeface();
                     var calculated = new HashSet<string>();
-                    foreach (var line in view.VisualLines)
+                    foreach (var info in _editor.BlameData.LineInfos)
                     {
-                        var lineNumber = line.FirstDocumentLine.LineNumber;
-                        if (lineNumber > _editor.BlameData.LineInfos.Count)
-                            break;
-
-                        var info = _editor.BlameData.LineInfos[lineNumber - 1];
-
                         if (!calculated.Add(info.CommitSHA))
                             continue;
 
@@ -124,8 +145,9 @@ namespace SourceGit.Views
                             _editor.Foreground);
                         x += author.Width + 8;
 
+                        var timeStr = Models.DateTimeFormat.Format(info.Timestamp, true);
                         var time = new FormattedText(
-                            info.Time,
+                            timeStr,
                             CultureInfo.CurrentCulture,
                             FlowDirection.LeftToRight,
                             typeface,
@@ -133,8 +155,9 @@ namespace SourceGit.Views
                             _editor.Foreground);
                         x += time.Width;
 
-                        if (maxWidth < x)
-                            maxWidth = x;
+                        var required = x + 16;
+                        if (maxWidth < required)
+                            maxWidth = required;
                     }
                 }
 
@@ -145,94 +168,48 @@ namespace SourceGit.Views
             {
                 base.OnPointerMoved(e);
 
-                var view = TextView;
-                if (!e.Handled && view is { VisualLinesValid: true })
+                if (DataContext is not ViewModels.Blame blame)
+                    return;
+
+                var pos = e.GetPosition(this);
+                foreach (var box in _shaHitBoxes)
                 {
-                    var pos = e.GetPosition(this);
-                    var typeface = view.CreateTypeface();
-
-                    foreach (var line in view.VisualLines)
+                    if (box.Rect.Contains(pos))
                     {
-                        if (line.IsDisposed || line.FirstDocumentLine == null || line.FirstDocumentLine.IsDeleted)
-                            continue;
-
-                        var lineNumber = line.FirstDocumentLine.LineNumber;
-                        if (lineNumber > _editor.BlameData.LineInfos.Count)
-                            break;
-
-                        var info = _editor.BlameData.LineInfos[lineNumber - 1];
-                        var y = line.GetTextLineVisualYPosition(line.TextLines[0], VisualYPosition.TextTop) - view.VerticalOffset;
-                        var shaLink = new FormattedText(
-                            info.CommitSHA,
-                            CultureInfo.CurrentCulture,
-                            FlowDirection.LeftToRight,
-                            typeface,
-                            _editor.FontSize,
-                            Brushes.DarkOrange);
-
-                        var rect = new Rect(0, y, shaLink.Width, shaLink.Height);
-                        if (rect.Contains(pos))
-                        {
-                            Cursor = Cursor.Parse("Hand");
-
-                            if (DataContext is ViewModels.Blame blame)
-                            {
-                                var msg = blame.GetCommitMessage(info.CommitSHA);
-                                ToolTip.SetTip(this, msg);
-                            }
-
-                            return;
-                        }
+                        Cursor = Cursor.Parse("Hand");
+                        var msg = blame.GetCommitMessage(box.LineInfo.CommitSHA);
+                        ToolTip.SetTip(this, msg);
+                        return;
                     }
-
-                    Cursor = Cursor.Default;
-                    ToolTip.SetTip(this, null);
                 }
+
+                Cursor = Cursor.Default;
+                ToolTip.SetTip(this, null);
             }
 
             protected override void OnPointerPressed(PointerPressedEventArgs e)
             {
                 base.OnPointerPressed(e);
 
-                var view = TextView;
-                if (!e.Handled && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && view is { VisualLinesValid: true })
+                if (DataContext is not ViewModels.Blame blame)
+                    return;
+
+                var pos = e.GetPosition(this);
+                foreach (var box in _shaHitBoxes)
                 {
-                    var pos = e.GetPosition(this);
-                    var typeface = view.CreateTypeface();
-
-                    foreach (var line in view.VisualLines)
+                    if (box.Rect.Contains(pos))
                     {
-                        if (line.IsDisposed || line.FirstDocumentLine == null || line.FirstDocumentLine.IsDeleted)
-                            continue;
-
-                        var lineNumber = line.FirstDocumentLine.LineNumber;
-                        if (lineNumber > _editor.BlameData.LineInfos.Count)
-                            break;
-
-                        var info = _editor.BlameData.LineInfos[lineNumber - 1];
-                        var y = line.GetTextLineVisualYPosition(line.TextLines[0], VisualYPosition.TextTop) - view.VerticalOffset;
-                        var shaLink = new FormattedText(
-                            info.CommitSHA,
-                            CultureInfo.CurrentCulture,
-                            FlowDirection.LeftToRight,
-                            typeface,
-                            _editor.FontSize,
-                            Brushes.DarkOrange);
-
-                        var rect = new Rect(0, y, shaLink.Width, shaLink.Height);
-                        if (rect.Contains(pos))
-                        {
-                            if (DataContext is ViewModels.Blame blame)
-                                blame.NavigateToCommit(info.File, info.CommitSHA);
-
-                            e.Handled = true;
-                            break;
-                        }
+                        blame.NavigateToCommit(box.LineInfo.File, box.LineInfo.CommitSHA);
+                        e.Handled = true;
+                        break;
                     }
                 }
             }
 
+            private record HitBox(Rect Rect, Models.BlameLineInfo LineInfo);
+
             private readonly BlameTextEditor _editor = null;
+            private List<HitBox> _shaHitBoxes = [];
         }
 
         public class VerticalSeparatorMargin : AbstractMargin
@@ -245,7 +222,7 @@ namespace SourceGit.Views
             public override void Render(DrawingContext context)
             {
                 var pen = new Pen(_editor.BorderBrush);
-                context.DrawLine(pen, new Point(0, 0), new Point(0, Bounds.Height));
+                context.DrawLine(pen, new Point(0.5, 0), new Point(0.5, Bounds.Height));
             }
 
             protected override Size MeasureOverride(Size availableSize)
@@ -256,31 +233,88 @@ namespace SourceGit.Views
             private readonly BlameTextEditor _editor = null;
         }
 
-        public static readonly StyledProperty<string> FileProperty =
-            AvaloniaProperty.Register<BlameTextEditor, string>(nameof(File));
+        public class LineBackgroundRenderer : IBackgroundRenderer
+        {
+            public KnownLayer Layer => KnownLayer.Background;
+
+            public LineBackgroundRenderer(BlameTextEditor owner)
+            {
+                _owner = owner;
+            }
+
+            public void Draw(TextView textView, DrawingContext drawingContext)
+            {
+                if (!textView.VisualLinesValid)
+                    return;
+
+                var w = textView.Bounds.Width;
+                if (double.IsNaN(w) || double.IsInfinity(w) || w <= 0)
+                    return;
+
+                var highlight = _owner._highlight;
+                if (string.IsNullOrEmpty(highlight))
+                    return;
+
+                var color = (Color)_owner.FindResource("SystemAccentColor")!;
+                var brush = new SolidColorBrush(color, 0.2);
+                var lines = _owner.BlameData.LineInfos;
+
+                foreach (var line in textView.VisualLines)
+                {
+                    if (line.IsDisposed || line.FirstDocumentLine == null || line.FirstDocumentLine.IsDeleted)
+                        continue;
+
+                    var lineNumber = line.FirstDocumentLine.LineNumber;
+                    if (lineNumber > lines.Count)
+                        break;
+
+                    var info = lines[lineNumber - 1];
+                    if (!info.CommitSHA.Equals(highlight, StringComparison.Ordinal))
+                        continue;
+
+                    var startY = line.GetTextLineVisualYPosition(line.TextLines[0], VisualYPosition.LineTop) - textView.VerticalOffset;
+                    var endY = line.GetTextLineVisualYPosition(line.TextLines[^1], VisualYPosition.LineBottom) - textView.VerticalOffset;
+                    drawingContext.FillRectangle(brush, new Rect(0, startY, w, endY - startY));
+                }
+            }
+
+            private readonly BlameTextEditor _owner;
+        }
+
+        public static readonly DirectProperty<BlameTextEditor, string> FileProperty =
+            AvaloniaProperty.RegisterDirect<BlameTextEditor, string>(
+                nameof(File),
+                static o => o.File,
+                static (o, v) => o.File = v);
 
         public string File
         {
-            get => GetValue(FileProperty);
-            set => SetValue(FileProperty, value);
+            get => _file;
+            set => SetAndRaise(FileProperty, ref _file, value);
         }
 
-        public static readonly StyledProperty<Models.BlameData> BlameDataProperty =
-            AvaloniaProperty.Register<BlameTextEditor, Models.BlameData>(nameof(BlameData));
+        public static readonly DirectProperty<BlameTextEditor, Models.BlameData> BlameDataProperty =
+            AvaloniaProperty.RegisterDirect<BlameTextEditor, Models.BlameData>(
+                nameof(BlameData),
+                static o => o.BlameData,
+                static (o, v) => o.BlameData = v);
 
         public Models.BlameData BlameData
         {
-            get => GetValue(BlameDataProperty);
-            set => SetValue(BlameDataProperty, value);
+            get => _blameData;
+            set => SetAndRaise(BlameDataProperty, ref _blameData, value);
         }
 
-        public static readonly StyledProperty<int> TabWidthProperty =
-            AvaloniaProperty.Register<BlameTextEditor, int>(nameof(TabWidth), 4);
+        public static readonly DirectProperty<BlameTextEditor, int> TabWidthProperty =
+            AvaloniaProperty.RegisterDirect<BlameTextEditor, int>(
+                nameof(TabWidth),
+                static o => o.TabWidth,
+                static (o, v) => o.TabWidth = v);
 
         public int TabWidth
         {
-            get => GetValue(TabWidthProperty);
-            set => SetValue(TabWidthProperty, value);
+            get => _tabWidth;
+            set => SetAndRaise(TabWidthProperty, ref _tabWidth, value);
         }
 
         protected override Type StyleKeyOverride => typeof(TextEditor);
@@ -291,52 +325,21 @@ namespace SourceGit.Views
             ShowLineNumbers = false;
             WordWrap = false;
 
-            Options.IndentationSize = TabWidth;
+            Options.IndentationSize = _tabWidth;
             Options.EnableHyperlinks = false;
             Options.EnableEmailHyperlinks = false;
 
             _textMate = Models.TextMateHelper.CreateForEditor(this);
 
-            TextArea.LeftMargins.Add(new CommitInfoMargin(this) { Margin = new Thickness(8, 0) });
+            TextArea.LeftMargins.Add(new CommitInfoMargin(this));
             TextArea.LeftMargins.Add(new VerticalSeparatorMargin(this));
             TextArea.LeftMargins.Add(new LineNumberMargin() { Margin = new Thickness(8, 0) });
             TextArea.LeftMargins.Add(new VerticalSeparatorMargin(this));
             TextArea.Caret.PositionChanged += OnTextAreaCaretPositionChanged;
+            TextArea.TextView.BackgroundRenderers.Add(new LineBackgroundRenderer(this));
             TextArea.TextView.ContextRequested += OnTextViewContextRequested;
             TextArea.TextView.VisualLinesChanged += OnTextViewVisualLinesChanged;
             TextArea.TextView.Margin = new Thickness(4, 0);
-        }
-
-        public override void Render(DrawingContext context)
-        {
-            base.Render(context);
-
-            if (string.IsNullOrEmpty(_highlight))
-                return;
-
-            var view = TextArea.TextView;
-            if (view is not { VisualLinesValid: true })
-                return;
-
-            var color = (Color)this.FindResource("SystemAccentColor")!;
-            var brush = new SolidColorBrush(color, 0.4);
-            foreach (var line in view.VisualLines)
-            {
-                if (line.IsDisposed || line.FirstDocumentLine == null || line.FirstDocumentLine.IsDeleted)
-                    continue;
-
-                var lineNumber = line.FirstDocumentLine.LineNumber;
-                if (lineNumber > BlameData.LineInfos.Count)
-                    break;
-
-                var info = BlameData.LineInfos[lineNumber - 1];
-                if (info.CommitSHA != _highlight)
-                    continue;
-
-                var startY = line.GetTextLineVisualYPosition(line.TextLines[0], VisualYPosition.LineTop) - view.VerticalOffset;
-                var endY = line.GetTextLineVisualYPosition(line.TextLines[^1], VisualYPosition.LineBottom) - view.VerticalOffset;
-                context.FillRectangle(brush, new Rect(0, startY, Bounds.Width, endY - startY));
-            }
         }
 
         protected override void OnUnloaded(RoutedEventArgs e)
@@ -361,19 +364,19 @@ namespace SourceGit.Views
 
             if (change.Property == FileProperty)
             {
-                if (File is { Length: > 0 })
-                    Models.TextMateHelper.SetGrammarByFileName(_textMate, File);
+                if (_file is { Length: > 0 })
+                    Models.TextMateHelper.SetGrammarByFileName(_textMate, _file);
             }
             if (change.Property == BlameDataProperty)
             {
-                if (BlameData is { IsBinary: false } blame)
+                if (_blameData is { IsBinary: false } blame)
                     Text = blame.Content;
                 else
                     Text = string.Empty;
             }
             else if (change.Property == TabWidthProperty)
             {
-                Options.IndentationSize = TabWidth;
+                Options.IndentationSize = _tabWidth;
             }
             else if (change.Property.Name == nameof(ActualThemeVariant) && change.NewValue != null)
             {
@@ -383,15 +386,14 @@ namespace SourceGit.Views
 
         private void OnTextAreaCaretPositionChanged(object sender, EventArgs e)
         {
-            if (!TextArea.IsFocused)
+            if (!TextArea.IsFocused || _blameData == null)
                 return;
 
             var caret = TextArea.Caret;
-            if (caret == null || caret.Line > BlameData.LineInfos.Count)
+            if (caret == null || caret.Line > _blameData.LineInfos.Count)
                 return;
 
-            _highlight = BlameData.LineInfos[caret.Line - 1].CommitSHA;
-            InvalidateVisual();
+            _highlight = _blameData.LineInfos[caret.Line - 1].CommitSHA;
         }
 
         private void OnTextViewContextRequested(object sender, ContextRequestedEventArgs e)
@@ -402,10 +404,10 @@ namespace SourceGit.Views
 
             var copy = new MenuItem();
             copy.Header = App.Text("Copy");
-            copy.Icon = App.CreateMenuIcon("Icons.Copy");
+            copy.Icon = this.CreateMenuIcon("Icons.Copy");
             copy.Click += async (_, ev) =>
             {
-                await App.CopyTextAsync(selected);
+                await this.CopyTextAsync(selected);
                 ev.Handled = true;
             };
 
@@ -426,10 +428,11 @@ namespace SourceGit.Views
                     break;
                 }
             }
-
-            InvalidateVisual();
         }
 
+        private string _file = null;
+        private Models.BlameData _blameData = null;
+        private int _tabWidth = 4;
         private TextMate.Installation _textMate = null;
         private string _highlight = string.Empty;
     }

@@ -10,7 +10,7 @@
              x:Class="SourceGit.Views.SubmodulesView">
   <UserControl.DataTemplates>
     <DataTemplate DataType="vm:SubmoduleCollectionAsTree">
-      <ListBox Classes="repo_left_content_list" Padding="0,0,2,0" ItemsSource="{Binding Rows}" SelectionMode="Single">
+      <ListBox Classes="repo_left_content_list" Padding="0,0,2,0" ItemsSource="{Binding Rows}" SelectionMode="Single" KeyDown="OnKeyDown">
         <ListBox.Styles>
           <Style Selector="ListBoxItem">
             <Setter Property="CornerRadius" Value="4"/>
@@ -48,6 +48,7 @@
 
                   <TextBlock Margin="8,0,0,0"
                              Text="{Binding SHA, Converter={x:Static c:StringConverters.ToShortSHA}}"
+                             FontFamily="{DynamicResource Fonts.Monospace}"
                              VerticalAlignment="Center"/>
 
                   <Path Margin="6,0,0,0"
@@ -139,7 +140,7 @@
     </DataTemplate>
 
     <DataTemplate DataType="vm:SubmoduleCollectionAsList">
-      <ListBox Classes="repo_left_content_list" ItemsSource="{Binding Submodules}" SelectionMode="Single">
+      <ListBox Classes="repo_left_content_list" ItemsSource="{Binding Submodules}" SelectionMode="Single" KeyDown="OnKeyDown">
         <ListBox.Styles>
           <Style Selector="ListBoxItem">
             <Setter Property="CornerRadius" Value="4"/>
@@ -183,6 +184,7 @@
 
                       <TextBlock Margin="8,0,0,0"
                                  Text="{Binding SHA, Converter={x:Static c:StringConverters.ToShortSHA}}"
+                                 FontFamily="{DynamicResource Fonts.Monospace}"
                                  VerticalAlignment="Center"/>
 
                       <Path Margin="6,0,0,0"

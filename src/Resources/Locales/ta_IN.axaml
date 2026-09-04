@@ -17,11 +17,9 @@
   <x:String x:Key="Text.AddWorktree.WhatToCheckout.CreateNew" xml:space="preserve">புதிய கிளையை உருவாக்கு</x:String>
   <x:String x:Key="Text.AddWorktree.WhatToCheckout.Existing" xml:space="preserve">ஏற்கனவே உள்ள கிளை</x:String>
   <x:String x:Key="Text.AIAssistant" xml:space="preserve">செநு உதவியாளர்</x:String>
+  <x:String x:Key="Text.AIAssistant.Model" xml:space="preserve">மாதிரி</x:String>
   <x:String x:Key="Text.AIAssistant.Regen" xml:space="preserve">மறு-உருவாக்கு</x:String>
   <x:String x:Key="Text.AIAssistant.Tip" xml:space="preserve">உறுதிமொழி செய்தியை உருவாக்க செநுவைப் பயன்படுத்து</x:String>
-  <x:String x:Key="Text.AIAssistant.Use" xml:space="preserve">உறுதிமொழி செய்தி என இடு</x:String>
-  <x:String x:Key="Text.Apply" xml:space="preserve">ஒட்டு</x:String>
-  <x:String x:Key="Text.Apply.File" xml:space="preserve">ஒட்டு கோப்பு:</x:String>
   <x:String x:Key="Text.Apply.File.Placeholder" xml:space="preserve">.ஒட்டு இடுவதற்கு கோப்பைத் தேர்ந்தெடு</x:String>
   <x:String x:Key="Text.Apply.IgnoreWS" xml:space="preserve">வெள்ளைவெளி மாற்றங்களைப் புறக்கணி</x:String>
   <x:String x:Key="Text.Apply.Title" xml:space="preserve">ஒட்டு இடு</x:String>
@@ -39,7 +37,6 @@
   <x:String x:Key="Text.AssumeUnchanged" xml:space="preserve">கோப்புகள் மாற்றப்படவில்லை எனக் கருதப்படுகிறது</x:String>
   <x:String x:Key="Text.AssumeUnchanged.Empty" xml:space="preserve">எந்த கோப்புகளும் மாற்றப்படவில்லை எனக் கருதப்படுகிறது</x:String>
   <x:String x:Key="Text.Avatar.Refetch" xml:space="preserve">புதுப்பி</x:String>
-  <x:String x:Key="Text.BinaryNotSupported" xml:space="preserve">இருமம் கோப்பு ஆதரிக்கப்படவில்லை!!!</x:String>
   <x:String x:Key="Text.Blame" xml:space="preserve">குற்றச்சாட்டு</x:String>
   <x:String x:Key="Text.Blame.TypeNotSupported" xml:space="preserve">இந்த கோப்பில் குற்றம் சாட்ட ஆதரிக்கப்படவில்லை!!!</x:String>
   <x:String x:Key="Text.BranchCM.Checkout" xml:space="preserve">${0}$ சரிபார்...</x:String>
@@ -67,12 +64,7 @@
   <x:String x:Key="Text.ChangeDisplayMode.List" xml:space="preserve">பாதை பட்டியலாகக் காட்டு</x:String>
   <x:String x:Key="Text.ChangeDisplayMode.Tree" xml:space="preserve">கோப்பு முறைமை மரமாகக் காட்டு</x:String>
   <x:String x:Key="Text.Checkout" xml:space="preserve">கிளை சரிபார்</x:String>
-  <x:String x:Key="Text.Checkout.Commit" xml:space="preserve">உறுதிமொழி சரிபார்</x:String>
-  <x:String x:Key="Text.Checkout.Commit.Target" xml:space="preserve">உறுதிமொழி:</x:String>
-  <x:String x:Key="Text.Checkout.Commit.Warning" xml:space="preserve">முன்னறிவிப்பு: ஒரு உறுதிமொழி சரிபார்பதன் மூலம், உங்கள் தலை பிரிக்கப்படும்</x:String>
   <x:String x:Key="Text.Checkout.LocalChanges" xml:space="preserve">உள்ளக மாற்றங்கள்:</x:String>
-  <x:String x:Key="Text.Checkout.LocalChanges.Discard" xml:space="preserve">நிராகரி</x:String>
-  <x:String x:Key="Text.Checkout.LocalChanges.StashAndReapply" xml:space="preserve">பதுக்கிவை &amp; மீண்டும் இடு</x:String>
   <x:String x:Key="Text.Checkout.Target" xml:space="preserve">கிளை:</x:String>
   <x:String x:Key="Text.CherryPick" xml:space="preserve">கனி பறி</x:String>
   <x:String x:Key="Text.CherryPick.AppendSourceToMessage" xml:space="preserve">உறுதிமொழி செய்திக்கு மூலத்தைச் சேர்</x:String>
@@ -99,12 +91,9 @@
   <x:String x:Key="Text.CommitCM.CompareWithWorktree" xml:space="preserve">பணிமரத்துடன் ஒப்பிடுக</x:String>
   <x:String x:Key="Text.CommitCM.CopySHA" xml:space="preserve">பாகொவ-வை</x:String>
   <x:String x:Key="Text.CommitCM.CustomAction" xml:space="preserve">தனிப்பயன் செயல்</x:String>
-  <x:String x:Key="Text.CommitCM.Merge" xml:space="preserve">${0}$ இதற்கு ஒன்றிணை</x:String>
   <x:String x:Key="Text.CommitCM.MergeMultiple" xml:space="preserve">ஒன்றிணை ...</x:String>
   <x:String x:Key="Text.CommitCM.Revert" xml:space="preserve">உறுதிமொழி திரும்பபெறு</x:String>
-  <x:String x:Key="Text.CommitCM.Reword" xml:space="preserve">வேறுமொழி</x:String>
   <x:String x:Key="Text.CommitCM.SaveAsPatch" xml:space="preserve">ஒட்டாக சேமி...</x:String>
-  <x:String x:Key="Text.CommitCM.Squash" xml:space="preserve">பெற்றோர்களில் நொறுக்கு</x:String>
   <x:String x:Key="Text.CommitDetail.Changes" xml:space="preserve">மாற்றங்கள்</x:String>
   <x:String x:Key="Text.CommitDetail.Changes.Search" xml:space="preserve">மாற்றங்களைத் தேடு...</x:String>
   <x:String x:Key="Text.CommitDetail.Files" xml:space="preserve">கோப்புகள்</x:String>
@@ -113,7 +102,6 @@
   <x:String x:Key="Text.CommitDetail.Files.Submodule" xml:space="preserve">துணைத்தொகுதி</x:String>
   <x:String x:Key="Text.CommitDetail.Info" xml:space="preserve">தகவல்</x:String>
   <x:String x:Key="Text.CommitDetail.Info.Author" xml:space="preserve">ஆசிரியர்</x:String>
-  <x:String x:Key="Text.CommitDetail.Info.Children" xml:space="preserve">குழந்தைகள்</x:String>
   <x:String x:Key="Text.CommitDetail.Info.Committer" xml:space="preserve">உறுதிமொழியாளர்</x:String>
   <x:String x:Key="Text.CommitDetail.Info.ContainsIn" xml:space="preserve">இந்த உறுதிமொழிடைக் கொண்ட குறிப்புகளைச் சரிபார்</x:String>
   <x:String x:Key="Text.CommitDetail.Info.ContainsIn.Title" xml:space="preserve">உறுதிமொழி இதில் உள்ளது</x:String>
@@ -182,8 +170,6 @@
   <x:String x:Key="Text.CreateBranch.BasedOn" xml:space="preserve">இதன் அடிப்படையில்:</x:String>
   <x:String x:Key="Text.CreateBranch.Checkout" xml:space="preserve">உருவாக்கப்பட்ட கிளையைப் சரிபார்</x:String>
   <x:String x:Key="Text.CreateBranch.LocalChanges" xml:space="preserve">உள்ளக மாற்றங்கள்:</x:String>
-  <x:String x:Key="Text.CreateBranch.LocalChanges.Discard" xml:space="preserve">நிராகரி</x:String>
-  <x:String x:Key="Text.CreateBranch.LocalChanges.StashAndReapply" xml:space="preserve">பதுக்கிவை &amp; மீண்டும் இடு</x:String>
   <x:String x:Key="Text.CreateBranch.Name" xml:space="preserve">புதிய கிளை பெயர்:</x:String>
   <x:String x:Key="Text.CreateBranch.Name.Placeholder" xml:space="preserve">கிளை பெயரை உள்ளிடவும்.</x:String>
   <x:String x:Key="Text.CreateBranch.Title" xml:space="preserve">உள்ளக கிளையை உருவாக்கு</x:String>
@@ -201,6 +187,8 @@
   <x:String x:Key="Text.CreateTag.Type.Lightweight" xml:space="preserve">குறைந்தஎடை</x:String>
   <x:String x:Key="Text.CtrlClickTip" xml:space="preserve">நேரடியாகத் தொடங்க  கட்டுப்பாட்டை அழுத்திப் பிடி</x:String>
   <x:String x:Key="Text.Cut" xml:space="preserve">வெட்டு</x:String>
+  <x:String x:Key="Text.DealWithLocalChanges.Discard" xml:space="preserve">நிராகரி</x:String>
+  <x:String x:Key="Text.DealWithLocalChanges.StashAndReapply" xml:space="preserve">பதுக்கிவை &amp; மீண்டும் இடு</x:String>
   <x:String x:Key="Text.DeleteBranch" xml:space="preserve">கிளையை நீக்கு</x:String>
   <x:String x:Key="Text.DeleteBranch.Branch" xml:space="preserve">கிளை:</x:String>
   <x:String x:Key="Text.DeleteBranch.IsRemoteTip" xml:space="preserve">நீங்கள் ஒரு தொலை கிளையை நீக்கப் போகிறீர்கள்!!!</x:String>
@@ -221,7 +209,6 @@
   <x:String x:Key="Text.DeleteTag.Tag" xml:space="preserve">குறிசொல்:</x:String>
   <x:String x:Key="Text.DeleteTag.WithRemote" xml:space="preserve">தொலை களஞ்சியங்களிலிருந்து நீக்கு</x:String>
   <x:String x:Key="Text.Diff.Binary" xml:space="preserve">இருமம்  வேறுபாடு</x:String>
-  <x:String x:Key="Text.Diff.FileModeChanged" xml:space="preserve">கோப்பு முறை மாற்றப்பட்டது</x:String>
   <x:String x:Key="Text.Diff.First" xml:space="preserve">முதல் வேறுபாடு</x:String>
   <x:String x:Key="Text.Diff.IgnoreWhitespace" xml:space="preserve">வெள்ளைவெளி மாற்றத்தை புறக்கணி</x:String>
   <x:String x:Key="Text.Diff.Last" xml:space="preserve">கடைசி வேறுபாடு</x:String>
@@ -356,11 +343,6 @@
   <x:String x:Key="Text.Hotkeys.Repo.ViewChanges" xml:space="preserve">'மாற்றங்கள்' என்பதற்கு மாறு</x:String>
   <x:String x:Key="Text.Hotkeys.Repo.ViewHistories" xml:space="preserve">'வரலாறுகள்' என்பதற்கு மாறு</x:String>
   <x:String x:Key="Text.Hotkeys.Repo.ViewStashes" xml:space="preserve">'பதுகிவைத்தவை' என்பதற்கு மாறு</x:String>
-  <x:String x:Key="Text.Hotkeys.TextEditor" xml:space="preserve">உரை திருத்தி</x:String>
-  <x:String x:Key="Text.Hotkeys.TextEditor.CloseSearch" xml:space="preserve">தேடல் பலகத்தை மூடு</x:String>
-  <x:String x:Key="Text.Hotkeys.TextEditor.GotoNextMatch" xml:space="preserve">அடுத்த பொருத்தத்தைக் கண்டறி</x:String>
-  <x:String x:Key="Text.Hotkeys.TextEditor.GotoPrevMatch" xml:space="preserve">முந்தைய பொருத்தத்தைக் கண்டறி</x:String>
-  <x:String x:Key="Text.Hotkeys.TextEditor.Search" xml:space="preserve">தேடல் பலகத்தைத் திற</x:String>
   <x:String x:Key="Text.Hunk.Discard" xml:space="preserve">நிராகரி</x:String>
   <x:String x:Key="Text.Hunk.Stage" xml:space="preserve">நிலைபடுத்து</x:String>
   <x:String x:Key="Text.Hunk.Unstage" xml:space="preserve">நிலைநீக்கு</x:String>
@@ -398,11 +380,11 @@
   <x:String x:Key="Text.OpenInExternalMergeTool" xml:space="preserve">ஒன்றிணை கருவியில் திற</x:String>
   <x:String x:Key="Text.Optional" xml:space="preserve">விருப்பத்தேர்வு.</x:String>
   <x:String x:Key="Text.PageTabBar.New" xml:space="preserve">புதிய பக்கத்தை உருவாக்கு</x:String>
-  <x:String x:Key="Text.PageTabBar.Tab.Bookmark" xml:space="preserve">புத்தகக்குறி</x:String>
   <x:String x:Key="Text.PageTabBar.Tab.Close" xml:space="preserve">மூடு தாவல்</x:String>
   <x:String x:Key="Text.PageTabBar.Tab.CloseOther" xml:space="preserve">பிற தாவல்களை மூடு</x:String>
   <x:String x:Key="Text.PageTabBar.Tab.CloseRight" xml:space="preserve">வலதுபுறத்தில் உள்ள தாவல்களை மூடு</x:String>
   <x:String x:Key="Text.PageTabBar.Tab.CopyPath" xml:space="preserve">களஞ்சிய பாதை நகலெடு</x:String>
+  <x:String x:Key="Text.PageTabBar.Tab.Edit" xml:space="preserve">திருத்து</x:String>
   <x:String x:Key="Text.PageTabBar.Welcome.Title" xml:space="preserve">களஞ்சியங்கள்</x:String>
   <x:String x:Key="Text.Paste" xml:space="preserve">ஒட்டு</x:String>
   <x:String x:Key="Text.Period.DaysAgo" xml:space="preserve">{0} நாட்களுக்கு முன்பு</x:String>
@@ -417,13 +399,9 @@
   <x:String x:Key="Text.Period.Yesterday" xml:space="preserve">நேற்று</x:String>
   <x:String x:Key="Text.Preferences" xml:space="preserve">விருப்பத்தேர்வுகள்</x:String>
   <x:String x:Key="Text.Preferences.AI" xml:space="preserve">செநு</x:String>
-  <x:String x:Key="Text.Preferences.AI.AnalyzeDiffPrompt" xml:space="preserve">வேறுபாடு உடனடியாக பகுப்பாய்வு செய்</x:String>
   <x:String x:Key="Text.Preferences.AI.ApiKey" xml:space="preserve">பநிஇ திறவுகோல்</x:String>
-  <x:String x:Key="Text.Preferences.AI.GenerateSubjectPrompt" xml:space="preserve">பொருள் உடனடியாக உருவாக்கு</x:String>
-  <x:String x:Key="Text.Preferences.AI.Model" xml:space="preserve">மாதிரி</x:String>
   <x:String x:Key="Text.Preferences.AI.Name" xml:space="preserve">பெயர்</x:String>
   <x:String x:Key="Text.Preferences.AI.Server" xml:space="preserve">சேவையகம்</x:String>
-  <x:String x:Key="Text.Preferences.AI.Streaming" xml:space="preserve">ஓடையை இயக்கு</x:String>
   <x:String x:Key="Text.Preferences.Appearance" xml:space="preserve">தோற்றம்</x:String>
   <x:String x:Key="Text.Preferences.Appearance.DefaultFont" xml:space="preserve">இயல்புநிலை எழுத்துரு</x:String>
   <x:String x:Key="Text.Preferences.Appearance.EditorTabWidth" xml:space="preserve">திருத்தி தாவல் அகலம்</x:String>
@@ -444,8 +422,6 @@
   <x:String x:Key="Text.Preferences.General.DateFormat" xml:space="preserve">தேதி வடிவம்</x:String>
   <x:String x:Key="Text.Preferences.General.Locale" xml:space="preserve">மொழி</x:String>
   <x:String x:Key="Text.Preferences.General.MaxHistoryCommits" xml:space="preserve">வரலாற்று உறுதிமொழிகள்</x:String>
-  <x:String x:Key="Text.Preferences.General.ShowAuthorTime" xml:space="preserve">வரைபடத்தில் உறுதிமொழி நேரத்திற்குப் பதிலாக ஆசிரியர் நேரத்தைக் காட்டு</x:String>
-  <x:String x:Key="Text.Preferences.General.ShowChildren" xml:space="preserve">உறுதிமொழி விவரங்களில் குழந்தைகளைக் காட்டு</x:String>
   <x:String x:Key="Text.Preferences.General.ShowTagsInGraph" xml:space="preserve">உறுதிமொழி வரைபடத்தில் குறிச்சொற்களைக் காட்டு</x:String>
   <x:String x:Key="Text.Preferences.General.SubjectGuideLength" xml:space="preserve">பொருள் வழிகாட்டி நீளம்</x:String>
   <x:String x:Key="Text.Preferences.Git" xml:space="preserve">அறிவிலி</x:String>
@@ -480,8 +456,6 @@
   <x:String x:Key="Text.Pull.Branch" xml:space="preserve">தொலை கிளை:</x:String>
   <x:String x:Key="Text.Pull.Into" xml:space="preserve">இதனுள்:</x:String>
   <x:String x:Key="Text.Pull.LocalChanges" xml:space="preserve">உள்ளக மாற்றங்கள்:</x:String>
-  <x:String x:Key="Text.Pull.LocalChanges.Discard" xml:space="preserve">நிராகரி</x:String>
-  <x:String x:Key="Text.Pull.LocalChanges.StashAndReapply" xml:space="preserve">பதுக்கிவை &amp; மீண்டும் இடு</x:String>
   <x:String x:Key="Text.Pull.Remote" xml:space="preserve">தொலை:</x:String>
   <x:String x:Key="Text.Pull.Title" xml:space="preserve">இழு (எடுத்து ஒன்றிணை)</x:String>
   <x:String x:Key="Text.Pull.UseRebase" xml:space="preserve">ஒன்றிணை என்பதற்குப் பதிலாக மறுதளத்தைப் பயன்படுத்து</x:String>
@@ -489,6 +463,7 @@
   <x:String x:Key="Text.Push.CheckSubmodules" xml:space="preserve">துணைத் தொகுதிகள் தள்ளப்பட்டது என்பதை உறுதிசெய்</x:String>
   <x:String x:Key="Text.Push.Force" xml:space="preserve">கட்டாயமாக தள்ளு</x:String>
   <x:String x:Key="Text.Push.Local" xml:space="preserve">உள்ளக கிளை:</x:String>
+  <x:String x:Key="Text.Push.NoVerify" xml:space="preserve">pre-push hook-ஐத் தவிர்</x:String>
   <x:String x:Key="Text.Push.Remote" xml:space="preserve">தொலை:</x:String>
   <x:String x:Key="Text.Push.Title" xml:space="preserve">மாற்றங்களை தொலைக்கு தள்ளு</x:String>
   <x:String x:Key="Text.Push.To" xml:space="preserve">தொலை கிளை:</x:String>
@@ -553,7 +528,6 @@
   <x:String x:Key="Text.Repository.Remotes.Add" xml:space="preserve">தொலையைச் சேர்</x:String>
   <x:String x:Key="Text.Repository.Search" xml:space="preserve">உறுதிமொழி தேடு</x:String>
   <x:String x:Key="Text.Repository.Search.ByAuthor" xml:space="preserve">ஆசிரியர்</x:String>
-  <x:String x:Key="Text.Repository.Search.ByCommitter" xml:space="preserve">உறுதிமொழியாளர்</x:String>
   <x:String x:Key="Text.Repository.Search.ByMessage" xml:space="preserve">செய்தி</x:String>
   <x:String x:Key="Text.Repository.Search.BySHA" xml:space="preserve">பாகொவ</x:String>
   <x:String x:Key="Text.Repository.Search.InCurrentBranch" xml:space="preserve">தற்போதைய கிளை</x:String>
@@ -581,7 +555,6 @@
   <x:String x:Key="Text.Revert" xml:space="preserve">பின்வாங்கு உறுதிமொழி</x:String>
   <x:String x:Key="Text.Revert.Commit" xml:space="preserve">உறுதிமொழி:</x:String>
   <x:String x:Key="Text.Revert.CommitChanges" xml:space="preserve">பின்வாங்கு மாற்றங்களை உறுதிமொழி</x:String>
-  <x:String x:Key="Text.Reword" xml:space="preserve">மாறுசொல் உறுதிமொழி செய்தி</x:String>
   <x:String x:Key="Text.Running" xml:space="preserve">இயங்குகிறது. காத்திருக்கவும்...</x:String>
   <x:String x:Key="Text.Save" xml:space="preserve">சேமி</x:String>
   <x:String x:Key="Text.SaveAs" xml:space="preserve">எனச் சேமி...</x:String>
@@ -635,7 +608,6 @@
   <x:String x:Key="Text.Submodule.Remove" xml:space="preserve">துணை தொகுதியை நீக்கு</x:String>
   <x:String x:Key="Text.Sure" xml:space="preserve">சரி</x:String>
   <x:String x:Key="Text.TagCM.Delete" xml:space="preserve">நீக்கு ${0}$...</x:String>
-  <x:String x:Key="Text.TagCM.Merge" xml:space="preserve">${0}$ இதை ${1}$ இல் இணை...</x:String>
   <x:String x:Key="Text.TagCM.Push" xml:space="preserve">தள்ளு ${0}$...</x:String>
   <x:String x:Key="Text.UpdateSubmodules" xml:space="preserve">துணைத்தொகுதிகளைப் புதுப்பி</x:String>
   <x:String x:Key="Text.UpdateSubmodules.All" xml:space="preserve">அனைத்து துணைத்தொகுதிகள்</x:String>

@@ -1,4 +1,6 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Threading.Tasks;
 
 namespace SourceGit.ViewModels
@@ -11,6 +13,18 @@ namespace SourceGit.ViewModels
             private set;
         }
 
+        public List<Models.Branch> LocalBranches
+        {
+            get;
+            private set;
+        }
+
+        public Models.Branch StartPoint
+        {
+            get => _startPoint;
+            set => SetProperty(ref _startPoint, value);
+        }
+
         public string Prefix
         {
             get;
@@ -18,7 +32,6 @@ namespace SourceGit.ViewModels
         }
 
         [Required(ErrorMessage = "Name is required!!!")]
-        [RegularExpression(@"^[\w\-/\.#]+$", ErrorMessage = "Bad branch name format!")]
         [CustomValidation(typeof(GitFlowStart), nameof(ValidateBranchName))]
         public string Name
         {
@@ -32,12 +45,30 @@ namespace SourceGit.ViewModels
 
             Type = type;
             Prefix = _repo.GitFlow.GetPrefix(type);
+            LocalBranches = new List<Models.Branch>();
+
+            foreach (var b in _repo.Branches)
+            {
+                if (b.IsLocal && !b.IsDetachedHead)
+                    LocalBranches.Add(b);
+            }
+
+            var defBranch = type switch
+            {
+                Models.GitFlowBranchType.Hotfix => _repo.GitFlow.ProductionBranch,
+                _ => _repo.GitFlow.DevelopmentBranch,
+            };
+
+            StartPoint = LocalBranches.Find(b => b.Name.Equals(defBranch, StringComparison.Ordinal));
         }
 
         public static ValidationResult ValidateBranchName(string name, ValidationContext ctx)
         {
             if (ctx.ObjectInstance is GitFlowStart starter)
             {
+                if (!Models.RefName.IsValidBranchName($"{starter.Prefix}{name}"))
+                    return new ValidationResult("Bad branch name format!");
+
                 var check = $"{starter.Prefix}{name}";
                 foreach (var b in starter._repo.Branches)
                 {
@@ -57,12 +88,16 @@ namespace SourceGit.ViewModels
             var log = _repo.CreateLog("GitFlow - Start");
             Use(log);
 
-            var succ = await Commands.GitFlow.StartAsync(_repo.FullPath, Type, _name, log);
+            var succ = await new Commands.GitFlow(_repo.FullPath)
+                .Use(log)
+                .StartAsync(Type, _name, _startPoint);
+
             log.Complete();
             return succ;
         }
 
         private readonly Repository _repo;
         private string _name = null;
+        private Models.Branch _startPoint = null;
     }
 }

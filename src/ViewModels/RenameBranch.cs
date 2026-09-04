@@ -12,7 +12,6 @@ namespace SourceGit.ViewModels
         }
 
         [Required(ErrorMessage = "Branch name is required!!!")]
-        [RegularExpression(@"^[\w\-/\.#\+]+$", ErrorMessage = "Bad branch name format!")]
         [CustomValidation(typeof(RenameBranch), nameof(ValidateBranchName))]
         public string Name
         {
@@ -31,6 +30,9 @@ namespace SourceGit.ViewModels
         {
             if (ctx.ObjectInstance is RenameBranch rename)
             {
+                if (!Models.RefName.IsValidBranchName(name))
+                    return new ValidationResult("Bad branch name format!");
+
                 foreach (var b in rename._repo.Branches)
                 {
                     if (b.IsLocal && b != rename.Target && b.Name.Equals(name, StringComparison.Ordinal))
@@ -60,17 +62,9 @@ namespace SourceGit.ViewModels
                 .RenameAsync(_name);
 
             if (succ)
-                _repo.UIStates.RenameBranchFilter(Target.FullName, _name);
+                _repo.RefreshAfterRenameBranch(Target, _name);
 
             log.Complete();
-            _repo.MarkBranchesDirtyManually();
-
-            if (isCurrent)
-            {
-                ProgressDescription = "Waiting for branch updated...";
-                await Task.Delay(400);
-            }
-
             return succ;
         }
 

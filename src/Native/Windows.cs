@@ -17,27 +17,6 @@ namespace SourceGit.Native
     [SupportedOSPlatform("windows")]
     internal class Windows : OS.IBackend
     {
-        [StructLayout(LayoutKind.Sequential)]
-        internal struct RECT
-        {
-            public int left;
-            public int top;
-            public int right;
-            public int bottom;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        internal struct MARGINS
-        {
-            public int cxLeftWidth;
-            public int cxRightWidth;
-            public int cyTopHeight;
-            public int cyBottomHeight;
-        }
-
-        [DllImport("dwmapi.dll")]
-        private static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref MARGINS margins);
-
         [DllImport("shlwapi.dll", CharSet = CharSet.Unicode, SetLastError = false)]
         private static extern bool PathFindOnPath([In, Out] StringBuilder pszFile, [In] string[] ppszOtherDirs);
 
@@ -50,17 +29,21 @@ namespace SourceGit.Native
         [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = false)]
         private static extern int SHOpenFolderAndSelectItems(IntPtr pidlFolder, int cild, IntPtr apidl, int dwFlags);
 
-        [DllImport("user32.dll")]
-        private static extern bool GetWindowRect(IntPtr hwnd, out RECT lpRect);
+        [DllImport("kernel32.dll")]
+        private static extern bool SetConsoleCtrlHandler(IntPtr handler, bool add);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool AttachConsole(int dwProcessId);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GenerateConsoleCtrlEvent(uint dwCtrlEvent, int dwProcessGroupId);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool FreeConsole();
 
         public void SetupApp(AppBuilder builder)
         {
-            // Fix drop shadow issue on Windows 10
-            if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
-            {
-                Window.WindowStateProperty.Changed.AddClassHandler<Window>((w, _) => FixWindowFrameOnWin10(w));
-                Control.LoadedEvent.AddClassHandler<Window>((w, _) => FixWindowFrameOnWin10(w));
-            }
+            // Do nothing for now.
         }
 
         public void SetupWindow(Window window)
@@ -68,62 +51,33 @@ namespace SourceGit.Native
             window.ExtendClientAreaChromeHints = ExtendClientAreaChromeHints.NoChrome;
             window.ExtendClientAreaToDecorationsHint = true;
             window.BorderThickness = new Thickness(1);
-
-            Win32Properties.AddWndProcHookCallback(window, (IntPtr hWnd, uint msg, IntPtr _, IntPtr lParam, ref bool handled) =>
-            {
-                // Custom WM_NCHITTEST only used to limit the resize border to 4 * window.RenderScaling pixels.
-                if (msg == 0x0084 && window.WindowState == WindowState.Normal)
-                {
-                    var p = IntPtrToPixelPoint(lParam);
-                    GetWindowRect(hWnd, out var rcWindow);
-
-                    var borderThickness = (int)(4 * window.RenderScaling);
-                    int y = 1;
-                    int x = 1;
-                    if (p.X >= rcWindow.left && p.X < rcWindow.left + borderThickness)
-                        x = 0;
-                    else if (p.X < rcWindow.right && p.X >= rcWindow.right - borderThickness)
-                        x = 2;
-
-                    if (p.Y >= rcWindow.top && p.Y < rcWindow.top + borderThickness)
-                        y = 0;
-                    else if (p.Y < rcWindow.bottom && p.Y >= rcWindow.bottom - borderThickness)
-                        y = 2;
-
-                    // If it's in the client area, do not handle it here.
-                    var zone = y * 3 + x;
-                    if (zone == 4)
-                        return IntPtr.Zero;
-
-                    // If it's in the resize border area, return the proper HT code.
-                    handled = true;
-                    return zone switch
-                    {
-                        0 => 13, // HTTOPLEFT
-                        1 => 12, // HTTOP
-                        2 => 14, // HTTOPRIGHT
-                        3 => 10, // HTLEFT
-                        5 => 11, // HTRIGHT
-                        6 => 16, // HTBOTTOMLEFT
-                        7 => 15, // HTBOTTOM
-                        _ => 17, // HTBOTTOMRIGHT
-                    };
-                }
-
-                return IntPtr.Zero;
-            });
+            window.Padding = new Thickness(0);
         }
 
-        public string GetDataDir()
+        public OS.Directories GetOrCreateDirectories()
         {
-            var execFile = Process.GetCurrentProcess().MainModule!.FileName;
+            var dirs = new OS.Directories();
+            var execFile = Environment.ProcessPath;
             var portableDir = Path.Combine(Path.GetDirectoryName(execFile)!, "data");
             if (Directory.Exists(portableDir))
-                return portableDir;
+            {
+                dirs.ConfigDir = portableDir;
+                dirs.CacheDir = portableDir;
+            }
+            else
+            {
+                var appDataDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "SourceGit");
 
-            return Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "SourceGit");
+                if (!Directory.Exists(appDataDir))
+                    Directory.CreateDirectory(appDataDir);
+
+                dirs.ConfigDir = appDataDir;
+                dirs.CacheDir = appDataDir;
+            }
+
+            return dirs;
         }
 
         public string FindGitExecutable()
@@ -199,17 +153,18 @@ namespace SourceGit.Native
             finder.VSCode(FindVSCode);
             finder.VSCodeInsiders(FindVSCodeInsiders);
             finder.VSCodium(FindVSCodium);
+            FindVisualStudio(finder);
             finder.Cursor(() => Path.Combine(localAppDataDir, @"Programs\Cursor\Cursor.exe"));
             finder.FindJetBrainsFromToolbox(() => Path.Combine(localAppDataDir, @"JetBrains\Toolbox"));
             finder.SublimeText(FindSublimeText);
             finder.Zed(FindZed);
-            FindVisualStudio(finder);
             return finder.Tools;
         }
 
         public void OpenBrowser(string url)
         {
-            var info = new ProcessStartInfo("cmd", $"""/c start "" {url.Quoted()}""");
+            var info = new ProcessStartInfo(url);
+            info.UseShellExecute = true;
             info.CreateNoWindow = true;
             Process.Start(info);
         }
@@ -222,7 +177,7 @@ namespace SourceGit.Native
 
             if (!File.Exists(terminal))
             {
-                App.RaiseException(workdir, "Terminal is not specified! Please confirm that the correct shell/terminal has been configured.");
+                Models.Notification.Send(workdir, "Terminal is not specified! Please confirm that the correct shell/terminal has been configured.", true);
                 return;
             }
 
@@ -233,32 +188,30 @@ namespace SourceGit.Native
             Process.Start(startInfo);
         }
 
-        public void OpenInFileManager(string path, bool select)
+        public void OpenInFileManager(string path)
         {
-            string fullpath;
             if (File.Exists(path))
             {
-                fullpath = new FileInfo(path).FullName;
-                select = true;
-            }
-            else
-            {
-                fullpath = new DirectoryInfo(path!).FullName;
-                fullpath += Path.DirectorySeparatorChar;
+                var pidl = ILCreateFromPathW(new FileInfo(path).FullName);
+
+                try
+                {
+                    SHOpenFolderAndSelectItems(pidl, 0, 0, 0);
+                }
+                finally
+                {
+                    ILFree(pidl);
+                }
+
+                return;
             }
 
-            if (select)
+            var dir = new DirectoryInfo(path).FullName + Path.DirectorySeparatorChar;
+            Process.Start(new ProcessStartInfo(dir)
             {
-                OpenFolderAndSelectFile(fullpath);
-            }
-            else
-            {
-                Process.Start(new ProcessStartInfo(fullpath)
-                {
-                    UseShellExecute = true,
-                    CreateNoWindow = true,
-                });
-            }
+                UseShellExecute = true,
+                CreateNoWindow = true,
+            });
         }
 
         public void OpenWithDefaultEditor(string file)
@@ -269,26 +222,62 @@ namespace SourceGit.Native
             Process.Start(start);
         }
 
-        private void FixWindowFrameOnWin10(Window w)
+        public bool SupportSetSid()
         {
-            // Schedule the DWM frame extension to run in the next render frame
-            // to ensure proper timing with the window initialization sequence
-            Dispatcher.UIThread.Post(() =>
+            return false;
+        }
+
+        public string GetSetSidExecutable()
+        {
+            return null;
+        }
+
+        public void TerminateProcess(Process proc)
+        {
+            var pid = proc.Id;
+            if (AttachConsole(pid))
             {
-                var platformHandle = w.TryGetPlatformHandle();
-                if (platformHandle == null)
-                    return;
+                SetConsoleCtrlHandler(IntPtr.Zero, true);
+                try
+                {
+                    if (!GenerateConsoleCtrlEvent(0, 0))
+                        proc.Kill(true);
 
-                var margins = new MARGINS { cxLeftWidth = 1, cxRightWidth = 1, cyTopHeight = 1, cyBottomHeight = 1 };
-                DwmExtendFrameIntoClientArea(platformHandle.Handle, ref margins);
-            }, DispatcherPriority.Render);
+                    proc.WaitForExit(2000);
+                }
+                finally
+                {
+                    FreeConsole();
+                    SetConsoleCtrlHandler(IntPtr.Zero, false);
+                }
+            }
+            else
+            {
+                proc.Kill(true);
+            }
         }
 
-        private PixelPoint IntPtrToPixelPoint(IntPtr param)
+        #region HELPER_METHODS
+        private List<Models.ExternalTool.LaunchOption> GenerateVSProjectLaunchOptions(string path)
         {
-            var v = IntPtr.Size == 4 ? param.ToInt32() : (int)(param.ToInt64() & 0xFFFFFFFF);
-            return new PixelPoint((short)(v & 0xffff), (short)(v >> 16));
+            var root = new DirectoryInfo(path);
+            if (!root.Exists)
+                return null;
+
+            var options = new List<Models.ExternalTool.LaunchOption>();
+            var prefixLen = root.FullName.Length;
+            root.WalkFiles(f =>
+            {
+                if (f.EndsWith(".sln", StringComparison.OrdinalIgnoreCase) ||
+                    f.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))
+                {
+                    var display = f.Substring(prefixLen).TrimStart(Path.DirectorySeparatorChar);
+                    options.Add(new(display, f.Quoted()));
+                }
+            });
+            return options;
         }
+        #endregion
 
         #region EXTERNAL_EDITOR_FINDER
         private string FindVSCode()
@@ -413,7 +402,7 @@ namespace SourceGit.Native
                     {
                         var exec = instance.ProductPath;
                         var icon = instance.IsPrerelease ? "vs-preview" : "vs";
-                        finder.TryAdd(instance.DisplayName, icon, () => exec, GenerateVSProjectLaunchOptions);
+                        finder.TryAdd(instance.DisplayName, icon, () => exec, GenerateVSProjectLaunchOptions, false);
                     }
                 }
             }
@@ -441,35 +430,48 @@ namespace SourceGit.Native
             return string.Empty;
         }
         #endregion
+    }
 
-        private void OpenFolderAndSelectFile(string folderPath)
+    [SupportedOSPlatform("windows")]
+    public static class Win64Utilities
+    {
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct MARGINS
         {
-            var pidl = ILCreateFromPathW(folderPath);
-
-            try
-            {
-                SHOpenFolderAndSelectItems(pidl, 0, 0, 0);
-            }
-            finally
-            {
-                ILFree(pidl);
-            }
+            public int cxLeftWidth;
+            public int cxRightWidth;
+            public int cyTopHeight;
+            public int cyBottomHeight;
         }
 
-        private List<Models.ExternalTool.LaunchOption> GenerateVSProjectLaunchOptions(string path)
-        {
-            var root = new DirectoryInfo(path);
-            if (!root.Exists)
-                return null;
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref MARGINS margins);
 
-            var options = new List<Models.ExternalTool.LaunchOption>();
-            root.WalkFiles(f =>
+        public static void FixWindowFrame(Window w)
+        {
+            if (w.WindowState == WindowState.Maximized)
             {
-                if (f.EndsWith(".sln", StringComparison.OrdinalIgnoreCase) ||
-                    f.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))
-                    options.Add(new(root.GetRelativePath(f), f.Quoted()));
-            });
-            return options;
+                w.BorderThickness = new Thickness(0);
+                w.Padding = new Thickness(8, 6, 8, 8);
+            }
+            else
+            {
+                w.BorderThickness = new Thickness(1);
+                w.Padding = new Thickness(0);
+            }
+
+            if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+                return;
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                var platformHandle = w.TryGetPlatformHandle();
+                if (platformHandle == null)
+                    return;
+
+                var margins = new MARGINS { cxLeftWidth = 1, cxRightWidth = 1, cyTopHeight = 1, cyBottomHeight = 1 };
+                DwmExtendFrameIntoClientArea(platformHandle.Handle, ref margins);
+            }, DispatcherPriority.Render);
         }
     }
 }

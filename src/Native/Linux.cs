@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
 using Avalonia;
@@ -13,6 +14,9 @@ namespace SourceGit.Native
     [SupportedOSPlatform("linux")]
     internal class Linux : OS.IBackend
     {
+        [DllImport("libc", SetLastError = true)]
+        private static extern int kill(int pid, int sig);
+
         public void SetupApp(AppBuilder builder)
         {
             builder.With(new X11PlatformOptions() { EnableIme = true });
@@ -20,6 +24,8 @@ namespace SourceGit.Native
 
         public void SetupWindow(Window window)
         {
+            window.BorderThickness = new Thickness(0);
+
             if (OS.UseSystemWindowFrame)
             {
                 window.ExtendClientAreaChromeHints = ExtendClientAreaChromeHints.Default;
@@ -33,38 +39,55 @@ namespace SourceGit.Native
             }
         }
 
-        public string GetDataDir()
+        public OS.Directories GetOrCreateDirectories()
         {
+            var dirs = new OS.Directories();
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
             // AppImage supports portable mode
             var appImage = Environment.GetEnvironmentVariable("APPIMAGE");
             if (!string.IsNullOrEmpty(appImage) && File.Exists(appImage))
             {
                 var portableDir = Path.Combine(Path.GetDirectoryName(appImage)!, "data");
                 if (Directory.Exists(portableDir))
-                    return portableDir;
+                {
+                    dirs.ConfigDir = portableDir;
+                    dirs.CacheDir = portableDir;
+                    return dirs;
+                }
             }
 
-            // Runtime data dir: ~/.sourcegit
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var dataDir = Path.Combine(home, ".sourcegit");
-            if (Directory.Exists(dataDir))
-                return dataDir;
+            // XDG Base Directory Specification: https://specifications.freedesktop.org/basedir/latest/
+            dirs.ConfigDir = GetXdgDirectory("XDG_CONFIG_HOME", Path.Combine(home, ".config"), "SourceGit");
+            dirs.CacheDir = GetXdgDirectory("XDG_CACHE_HOME", Path.Combine(home, ".cache"), "SourceGit");
 
-            // Migrate old data: ~/.config/SourceGit
-            var oldDataDir = Path.Combine(home, ".config", "SourceGit");
-            if (Directory.Exists(oldDataDir))
+            // If the app basic dirs already exist, we can skip the migration step
+            if (Directory.Exists(dirs.ConfigDir) && Directory.Exists(dirs.CacheDir))
+                return dirs;
+
+            // Create the config and cache directories if they don't exist
+            if (!Directory.Exists(dirs.ConfigDir))
+                Directory.CreateDirectory(dirs.ConfigDir);
+            if (!Directory.Exists(dirs.CacheDir))
+                Directory.CreateDirectory(dirs.CacheDir);
+
+            // Migrate legacy data dir: ~/.sourcegit to XDG standard directories
+            var legacyDir = Path.Combine(home, ".sourcegit");
+            if (Directory.Exists(legacyDir))
             {
                 try
                 {
-                    Directory.Move(oldDataDir, dataDir);
+                    File.Copy(Path.Combine(legacyDir, "preference.json"), Path.Combine(dirs.ConfigDir, "preference.json"), true);
+                    Directory.Move(Path.Combine(legacyDir, "avatars"), Path.Combine(dirs.CacheDir, "avatars"));
+                    Directory.Delete(legacyDir, true);
                 }
                 catch
                 {
-                    // Ignore errors
+                    // Ignore any errors during migration
                 }
             }
 
-            return dataDir;
+            return dirs;
         }
 
         public string FindGitExecutable()
@@ -106,7 +129,7 @@ namespace SourceGit.Native
             Process.Start(browser, url.Quoted());
         }
 
-        public void OpenInFileManager(string path, bool select)
+        public void OpenInFileManager(string path)
         {
             if (Directory.Exists(path))
             {
@@ -136,7 +159,7 @@ namespace SourceGit.Native
             }
             catch (Exception e)
             {
-                App.RaiseException(workdir, $"Failed to start '{OS.ShellOrTerminal}'. Reason: {e.Message}");
+                Models.Notification.Send(workdir, $"Failed to start '{OS.ShellOrTerminal}'. Reason: {e.Message}", true);
             }
         }
 
@@ -148,9 +171,42 @@ namespace SourceGit.Native
                 proc.WaitForExit();
 
                 if (proc.ExitCode != 0)
-                    App.RaiseException("", $"Failed to open: {file}");
+                    Models.Notification.Send("", $"Failed to open: {file}", true);
 
                 proc.Close();
+            }
+        }
+
+        public bool SupportSetSid()
+        {
+            return true;
+        }
+
+        public string GetSetSidExecutable()
+        {
+            return "setsid";
+        }
+
+        public void TerminateProcess(Process proc)
+        {
+            if (kill(-proc.Id, 15) != 0)
+            {
+                // If the process already exited, we can just ignore the error.
+                if (Marshal.GetLastPInvokeError() == 3 /* ESRCH */)
+                    return;
+
+                // Actually, this will not be called since the process is
+                // spawned by us (EPERM will not happen), and SIGTERM (15)
+                // is a valid signal (EINVAL will not happen).
+                // See https://www.man7.org/linux/man-pages/man2/kill.2.html
+                try
+                {
+                    proc.Kill(true);
+                }
+                catch
+                {
+                    // Ignore any errors when trying to kill the process
+                }
             }
         }
 
@@ -167,6 +223,15 @@ namespace SourceGit.Native
 
             var local = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin", filename);
             return File.Exists(local) ? local : string.Empty;
+        }
+
+        private string GetXdgDirectory(string envVar, string fallback, string subDirName)
+        {
+            var dir = Environment.GetEnvironmentVariable(envVar);
+            if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+                return Path.Combine(dir, subDirName);
+
+            return Path.Combine(fallback, subDirName);
         }
     }
 }

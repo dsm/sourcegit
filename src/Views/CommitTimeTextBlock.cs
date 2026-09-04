@@ -10,31 +10,52 @@ namespace SourceGit.Views
 {
     public class CommitTimeTextBlock : TextBlock
     {
-        public static readonly StyledProperty<bool> ShowAsDateTimeProperty =
-            AvaloniaProperty.Register<CommitTimeTextBlock, bool>(nameof(ShowAsDateTime), true);
+        public static readonly DirectProperty<CommitTimeTextBlock, bool> ShowAsDateTimeProperty =
+            AvaloniaProperty.RegisterDirect<CommitTimeTextBlock, bool>(
+                nameof(ShowAsDateTime),
+                static o => o.ShowAsDateTime,
+                static (o, v) => o.ShowAsDateTime = v);
 
         public bool ShowAsDateTime
         {
-            get => GetValue(ShowAsDateTimeProperty);
-            set => SetValue(ShowAsDateTimeProperty, value);
+            get => _showAsDateTime;
+            set => SetAndRaise(ShowAsDateTimeProperty, ref _showAsDateTime, value);
         }
 
-        public static readonly StyledProperty<int> DateTimeFormatProperty =
-            AvaloniaProperty.Register<CommitTimeTextBlock, int>(nameof(DateTimeFormat));
+        public static readonly DirectProperty<CommitTimeTextBlock, bool> Use24HoursProperty =
+            AvaloniaProperty.RegisterDirect<CommitTimeTextBlock, bool>(
+                nameof(Use24Hours),
+                static o => o.Use24Hours,
+                static (o, v) => o.Use24Hours = v);
+
+        public bool Use24Hours
+        {
+            get => _use24Hours;
+            set => SetAndRaise(Use24HoursProperty, ref _use24Hours, value);
+        }
+
+        public static readonly DirectProperty<CommitTimeTextBlock, int> DateTimeFormatProperty =
+            AvaloniaProperty.RegisterDirect<CommitTimeTextBlock, int>(
+                nameof(DateTimeFormat),
+                static o => o.DateTimeFormat,
+                static (o, v) => o.DateTimeFormat = v);
 
         public int DateTimeFormat
         {
-            get => GetValue(DateTimeFormatProperty);
-            set => SetValue(DateTimeFormatProperty, value);
+            get => _dateTimeFormat;
+            set => SetAndRaise(DateTimeFormatProperty, ref _dateTimeFormat, value);
         }
 
-        public static readonly StyledProperty<bool> UseAuthorTimeProperty =
-            AvaloniaProperty.Register<CommitTimeTextBlock, bool>(nameof(UseAuthorTime), true);
+        public static readonly DirectProperty<CommitTimeTextBlock, ulong> TimestampProperty =
+            AvaloniaProperty.RegisterDirect<CommitTimeTextBlock, ulong>(
+                nameof(Timestamp),
+                static o => o.Timestamp,
+                static (o, v) => o.Timestamp = v);
 
-        public bool UseAuthorTime
+        public ulong Timestamp
         {
-            get => GetValue(UseAuthorTimeProperty);
-            set => SetValue(UseAuthorTimeProperty, value);
+            get => _timestamp;
+            set => SetAndRaise(TimestampProperty, ref _timestamp, value);
         }
 
         protected override Type StyleKeyOverride => typeof(TextBlock);
@@ -43,7 +64,7 @@ namespace SourceGit.Views
         {
             base.OnPropertyChanged(change);
 
-            if (change.Property == UseAuthorTimeProperty)
+            if (change.Property == TimestampProperty)
             {
                 SetCurrentValue(TextProperty, GetDisplayText());
             }
@@ -53,16 +74,16 @@ namespace SourceGit.Views
 
                 if (ShowAsDateTime)
                 {
-                    StopTimer();
+                    _refreshTimer?.Stop();
                     HorizontalAlignment = HorizontalAlignment.Left;
                 }
                 else
                 {
-                    StartTimer();
+                    _refreshTimer?.Start();
                     HorizontalAlignment = HorizontalAlignment.Center;
                 }
             }
-            else if (change.Property == DateTimeFormatProperty)
+            else if (change.Property == DateTimeFormatProperty || change.Property == Use24HoursProperty)
             {
                 if (ShowAsDateTime)
                     SetCurrentValue(TextProperty, GetDisplayText());
@@ -73,14 +94,27 @@ namespace SourceGit.Views
         {
             base.OnLoaded(e);
 
-            if (!ShowAsDateTime)
-                StartTimer();
+            _refreshTimer = new DispatcherTimer();
+            _refreshTimer.Interval = TimeSpan.FromSeconds(10);
+            _refreshTimer.Tag = this;
+            _refreshTimer.Tick += static (o, _) =>
+            {
+                if (o is DispatcherTimer { Tag: CommitTimeTextBlock textBlock })
+                {
+                    var text = textBlock.GetDisplayText();
+                    if (!text.Equals(textBlock.Text, StringComparison.Ordinal))
+                        textBlock.Text = text;
+                }
+            };
+            _refreshTimer.IsEnabled = !ShowAsDateTime;
         }
 
         protected override void OnUnloaded(RoutedEventArgs e)
         {
+            _refreshTimer.Tag = null;
+            _refreshTimer.IsEnabled = false;
+
             base.OnUnloaded(e);
-            StopTimer();
         }
 
         protected override void OnDataContextChanged(EventArgs e)
@@ -89,42 +123,12 @@ namespace SourceGit.Views
             SetCurrentValue(TextProperty, GetDisplayText());
         }
 
-        private void StartTimer()
-        {
-            if (_refreshTimer != null)
-                return;
-
-            _refreshTimer = DispatcherTimer.Run(() =>
-            {
-                Dispatcher.UIThread.Invoke(() =>
-                {
-                    var text = GetDisplayText();
-                    if (!text.Equals(Text, StringComparison.Ordinal))
-                        Text = text;
-                });
-
-                return true;
-            }, TimeSpan.FromSeconds(10));
-        }
-
-        private void StopTimer()
-        {
-            if (_refreshTimer != null)
-            {
-                _refreshTimer.Dispose();
-                _refreshTimer = null;
-            }
-        }
-
         private string GetDisplayText()
         {
-            if (DataContext is not Models.Commit commit)
-                return string.Empty;
-
+            var timestamp = Timestamp;
             if (ShowAsDateTime)
-                return UseAuthorTime ? commit.AuthorTimeStr : commit.CommitterTimeStr;
+                return Models.DateTimeFormat.Format(timestamp);
 
-            var timestamp = UseAuthorTime ? commit.AuthorTime : commit.CommitterTime;
             var now = DateTime.Now;
             var localTime = DateTime.UnixEpoch.AddSeconds(timestamp).ToLocalTime();
             var span = now - localTime;
@@ -167,6 +171,10 @@ namespace SourceGit.Views
             return App.Text("Period.YearsAgo", diffYear);
         }
 
-        private IDisposable _refreshTimer = null;
+        private bool _showAsDateTime = true;
+        private bool _use24Hours = true;
+        private int _dateTimeFormat = 0;
+        private ulong _timestamp = 0;
+        private DispatcherTimer _refreshTimer = null;
     }
 }

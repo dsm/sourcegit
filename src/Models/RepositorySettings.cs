@@ -30,17 +30,11 @@ namespace SourceGit.Models
             set;
         } = string.Empty;
 
-        public bool EnableAutoFetch
+        public bool EnableRecursiveWhenAutoUpdatingSubmodules
         {
             get;
             set;
-        } = false;
-
-        public int AutoFetchInterval
-        {
-            get;
-            set;
-        } = 10;
+        } = true;
 
         public bool AskBeforeAutoUpdatingSubmodules
         {
@@ -55,12 +49,6 @@ namespace SourceGit.Models
         } = "---";
 
         public AvaloniaList<CommitTemplate> CommitTemplates
-        {
-            get;
-            set;
-        } = [];
-
-        public AvaloniaList<string> CommitMessages
         {
             get;
             set;
@@ -108,7 +96,7 @@ namespace SourceGit.Models
             return setting;
         }
 
-        public async Task SaveAsync()
+        public void Save()
         {
             try
             {
@@ -116,7 +104,9 @@ namespace SourceGit.Models
                 var hash = HashContent(content);
                 if (!hash.Equals(_orgHash, StringComparison.Ordinal))
                 {
-                    await File.WriteAllTextAsync(_file, content);
+                    var tmpfile = $"{_file}.tmp";
+                    File.WriteAllText(tmpfile, content);
+                    File.Move(tmpfile, _file, true);
                     _orgHash = hash;
                 }
             }
@@ -124,25 +114,6 @@ namespace SourceGit.Models
             {
                 // Ignore save errors
             }
-        }
-
-        public void PushCommitMessage(string message)
-        {
-            message = message.Trim().ReplaceLineEndings("\n");
-            var existIdx = CommitMessages.IndexOf(message);
-            if (existIdx == 0)
-                return;
-
-            if (existIdx > 0)
-            {
-                CommitMessages.Move(existIdx, 0);
-                return;
-            }
-
-            if (CommitMessages.Count > 9)
-                CommitMessages.RemoveRange(9, CommitMessages.Count - 9);
-
-            CommitMessages.Insert(0, message);
         }
 
         public CustomAction AddNewCustomAction()
@@ -175,10 +146,7 @@ namespace SourceGit.Models
         private static string HashContent(string source)
         {
             var hash = MD5.HashData(Encoding.Default.GetBytes(source));
-            var builder = new StringBuilder(hash.Length * 2);
-            foreach (var c in hash)
-                builder.Append(c.ToString("x2"));
-            return builder.ToString();
+            return Convert.ToHexStringLower(hash);
         }
 
         private static Dictionary<string, RepositorySettings> _cache = new();

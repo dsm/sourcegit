@@ -1,20 +1,12 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Text;
 
 namespace SourceGit.Models
 {
     public class DiffOption
     {
-        /// <summary>
-        ///     Enable `--ignore-cr-at-eol` by default?
-        /// </summary>
-        public static bool IgnoreCRAtEOL
-        {
-            get;
-            set;
-        } = true;
-
-        public Change WorkingCopyChange => _workingCopyChange;
+        public bool IsLocalChange => _revisions.Count == 0;
         public bool IsUnstaged => _isUnstaged;
         public List<string> Revisions => _revisions;
         public string Path => _path;
@@ -27,7 +19,6 @@ namespace SourceGit.Models
         /// <param name="isUnstaged"></param>
         public DiffOption(Change change, bool isUnstaged)
         {
-            _workingCopyChange = change;
             _isUnstaged = isUnstaged;
             _path = change.Path;
             _orgPath = change.OriginalPath;
@@ -59,24 +50,67 @@ namespace SourceGit.Models
         /// <param name="change"></param>
         public DiffOption(Commit commit, Change change)
         {
-            var baseRevision = commit.Parents.Count == 0 ? Commit.EmptyTreeSHA1 : $"{commit.SHA}^";
-            _revisions.Add(baseRevision);
+            _revisions.Add(commit.FirstParentToCompare);
             _revisions.Add(commit.SHA);
             _path = change.Path;
             _orgPath = change.OriginalPath;
         }
 
         /// <summary>
-        ///     Diff with filepath. Used by FileHistories
+        ///     Used to diff in `FileHistory`
         /// </summary>
-        /// <param name="commit"></param>
-        /// <param name="file"></param>
-        public DiffOption(Commit commit, string file)
+        /// <param name="ver"></param>
+        public DiffOption(FileVersion ver)
         {
-            var baseRevision = commit.Parents.Count == 0 ? Commit.EmptyTreeSHA1 : $"{commit.SHA}^";
-            _revisions.Add(baseRevision);
-            _revisions.Add(commit.SHA);
-            _path = file;
+            if (string.IsNullOrEmpty(ver.OriginalPath))
+            {
+                _revisions.Add(ver.HasParent ? $"{ver.SHA}^" : EmptyTreeHash.Guess(ver.SHA));
+                _revisions.Add(ver.SHA);
+                _path = ver.Path;
+            }
+            else
+            {
+                _revisions.Add($"{ver.SHA}^:{ver.OriginalPath.Quoted()}");
+                _revisions.Add($"{ver.SHA}:{ver.Path.Quoted()}");
+                _path = ver.Path;
+                _orgPath = ver.Change.OriginalPath;
+                _ignorePaths = true;
+            }
+        }
+
+        /// <summary>
+        ///     Used to diff two revisions in `FileHistory`
+        /// </summary>
+        /// <param name="start"></param>
+        /// <param name="end"></param>
+        public DiffOption(FileVersion start, FileVersion end)
+        {
+            if (start.Change.Index == ChangeState.Deleted)
+            {
+                _revisions.Add(EmptyTreeHash.Guess(end.SHA));
+                _revisions.Add(end.SHA);
+                _path = end.Path;
+            }
+            else if (end.Change.Index == ChangeState.Deleted)
+            {
+                _revisions.Add(start.SHA);
+                _revisions.Add(EmptyTreeHash.Guess(start.SHA));
+                _path = start.Path;
+            }
+            else if (!end.Path.Equals(start.Path, StringComparison.Ordinal))
+            {
+                _revisions.Add($"{start.SHA}:{start.Path.Quoted()}");
+                _revisions.Add($"{end.SHA}:{end.Path.Quoted()}");
+                _path = end.Path;
+                _orgPath = start.Path;
+                _ignorePaths = true;
+            }
+            else
+            {
+                _revisions.Add(start.SHA);
+                _revisions.Add(end.SHA);
+                _path = start.Path;
+            }
         }
 
         /// <summary>
@@ -104,6 +138,9 @@ namespace SourceGit.Models
             foreach (var r in _revisions)
                 builder.Append($"{r} ");
 
+            if (_ignorePaths)
+                return builder.ToString();
+
             builder.Append("-- ");
             if (!string.IsNullOrEmpty(_orgPath))
                 builder.Append($"{_orgPath.Quoted()} ");
@@ -112,11 +149,11 @@ namespace SourceGit.Models
             return builder.ToString();
         }
 
-        private readonly Change _workingCopyChange = null;
         private readonly bool _isUnstaged = false;
         private readonly string _path;
         private readonly string _orgPath = string.Empty;
         private readonly string _extra = string.Empty;
         private readonly List<string> _revisions = [];
+        private readonly bool _ignorePaths = false;
     }
 }

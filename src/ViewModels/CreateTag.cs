@@ -13,7 +13,6 @@ namespace SourceGit.ViewModels
         }
 
         [Required(ErrorMessage = "Tag name is required!")]
-        [RegularExpression(@"^(?!\.)(?!/)(?!.*\.$)(?!.*/$)(?!.*\.\.)[\w\-\+\./]+$", ErrorMessage = "Bad tag name format!")]
         [CustomValidation(typeof(CreateTag), nameof(ValidateTagName))]
         public string TagName
         {
@@ -29,8 +28,15 @@ namespace SourceGit.ViewModels
 
         public bool Annotated
         {
-            get => _annotated;
-            set => SetProperty(ref _annotated, value);
+            get => _repo.UIStates.CreateAnnotatedTag;
+            set
+            {
+                if (_repo.UIStates.CreateAnnotatedTag != value)
+                {
+                    _repo.UIStates.CreateAnnotatedTag = value;
+                    OnPropertyChanged();
+                }
+            }
         }
 
         public bool SignTag
@@ -67,6 +73,9 @@ namespace SourceGit.ViewModels
         {
             if (ctx.ObjectInstance is CreateTag creator)
             {
+                if (!Models.RefName.IsValidTagName(name))
+                    return new ValidationResult("Bad tag name format!");
+
                 var found = creator._repo.Tags.Find(x => x.Name == name);
                 if (found != null)
                     return new ValidationResult("A tag with same name already exists!");
@@ -83,9 +92,11 @@ namespace SourceGit.ViewModels
             var log = _repo.CreateLog("Create Tag");
             Use(log);
 
-            var cmd = new Commands.Tag(_repo.FullPath, _tagName).Use(log);
-            var succ = false;
-            if (_annotated)
+            var cmd = new Commands.Tag(_repo.FullPath, _tagName)
+                .Use(log);
+
+            bool succ;
+            if (_repo.UIStates.CreateAnnotatedTag)
                 succ = await cmd.AddAsync(_basedOn, Message, SignTag);
             else
                 succ = await cmd.AddAsync(_basedOn);
@@ -104,7 +115,6 @@ namespace SourceGit.ViewModels
 
         private readonly Repository _repo = null;
         private string _tagName = string.Empty;
-        private bool _annotated = true;
         private readonly string _basedOn;
     }
 }

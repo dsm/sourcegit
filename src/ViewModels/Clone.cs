@@ -1,8 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Threading;
 
 namespace SourceGit.ViewModels
 {
@@ -46,6 +47,23 @@ namespace SourceGit.ViewModels
             set => SetProperty(ref _local, value);
         }
 
+        public List<RepositoryNode> Groups
+        {
+            get;
+        }
+
+        public RepositoryNode SelectedGroup
+        {
+            get => _selectedGroup;
+            set => SetProperty(ref _selectedGroup, value);
+        }
+
+        public int Bookmark
+        {
+            get => _bookmark;
+            set => SetProperty(ref _bookmark, value);
+        }
+
         public string ExtraArgs
         {
             get => _extraArgs;
@@ -61,25 +79,17 @@ namespace SourceGit.ViewModels
         public Clone(string pageId)
         {
             _pageId = pageId;
+            CanTerminate = true;
+
+            Groups = new List<RepositoryNode>();
+            Groups.Add(new RepositoryNode { Name = "No Group (Uncategorized)", Id = string.Empty });
+            SelectedGroup = Groups[0];
+            CollectGroups(Groups, Preferences.Instance.RepositoryNodes);
 
             var activeWorkspace = Preferences.Instance.GetActiveWorkspace();
             _parentFolder = activeWorkspace?.DefaultCloneDir;
             if (string.IsNullOrEmpty(ParentFolder))
                 _parentFolder = Preferences.Instance.GitDefaultCloneDir;
-
-            Task.Run(async () =>
-            {
-                try
-                {
-                    var text = await App.GetClipboardTextAsync();
-                    if (Models.Remote.IsValidURL(text))
-                        Dispatcher.UIThread.Post(() => Remote = text);
-                }
-                catch
-                {
-                    // Ignore
-                }
-            });
         }
 
         public static ValidationResult ValidateRemote(string remote, ValidationContext _)
@@ -103,10 +113,14 @@ namespace SourceGit.ViewModels
             var log = new CommandLog("Clone");
             Use(log);
 
+            _cancellation = new CancellationTokenSource();
+            var token = _cancellation.Token;
+
             var succ = await new Commands.Clone(_pageId, _parentFolder, _remote, _local, _useSSH ? _sshKey : "", _extraArgs)
+                .WithCancellation(token)
                 .Use(log)
                 .ExecAsync();
-            if (!succ)
+            if (!succ || token.IsCancellationRequested)
                 return false;
 
             var path = _parentFolder;
@@ -127,7 +141,7 @@ namespace SourceGit.ViewModels
 
             if (!Directory.Exists(path))
             {
-                App.RaiseException(_pageId, $"Folder '{path}' can NOT be found");
+                Models.Notification.Send(_pageId, $"Folder '{path}' can NOT be found", true);
                 return false;
             }
 
@@ -138,18 +152,21 @@ namespace SourceGit.ViewModels
                     .SetAsync("remote.origin.sshkey", _sshKey);
             }
 
-            if (InitAndUpdateSubmodules)
+            if (InitAndUpdateSubmodules && !token.IsCancellationRequested)
             {
                 var submodules = await new Commands.QueryUpdatableSubmodules(path, true).GetResultAsync();
                 if (submodules.Count > 0)
                     await new Commands.Submodule(path)
+                        .WithCancellation(token)
                         .Use(log)
-                        .UpdateAsync(submodules, true);
+                        .UpdateAsync(submodules, true, true, false);
             }
 
             log.Complete();
 
-            var node = Preferences.Instance.FindOrAddNodeByRepositoryPath(path, null, true);
+            var parent = _selectedGroup is { Id: not "" } ? _selectedGroup : null;
+            var node = Preferences.Instance.FindOrAddNodeByRepositoryPath(path, parent, true);
+            node.Bookmark = _bookmark;
             await node.UpdateStatusAsync(false, null);
 
             var launcher = App.GetLauncher();
@@ -165,7 +182,27 @@ namespace SourceGit.ViewModels
 
             Welcome.Instance.Refresh();
             launcher.OpenRepositoryInTab(node, page);
+
+            _cancellation = null;
             return true;
+        }
+
+        public override void Terminate()
+        {
+            // Just fire cancel event and UI will auto wait the `Sure` complete
+            var _ = _cancellation?.CancelAsync();
+        }
+
+        private void CollectGroups(List<RepositoryNode> outs, List<RepositoryNode> collections)
+        {
+            foreach (var node in collections)
+            {
+                if (!node.IsRepository)
+                {
+                    outs.Add(node);
+                    CollectGroups(outs, node.SubNodes);
+                }
+            }
         }
 
         private string _pageId = string.Empty;
@@ -175,5 +212,8 @@ namespace SourceGit.ViewModels
         private string _parentFolder = string.Empty;
         private string _local = string.Empty;
         private string _extraArgs = string.Empty;
+        private RepositoryNode _selectedGroup = null;
+        private int _bookmark = 0;
+        private CancellationTokenSource _cancellation = null;
     }
 }

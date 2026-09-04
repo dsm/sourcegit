@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using Avalonia.Collections;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -155,6 +156,19 @@ namespace SourceGit.ViewModels
             }
         }
 
+        public bool Use24Hours
+        {
+            get => Models.DateTimeFormat.Use24Hours;
+            set
+            {
+                if (value != Models.DateTimeFormat.Use24Hours)
+                {
+                    Models.DateTimeFormat.Use24Hours = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
         public bool UseFixedTabWidth
         {
             get => _useFixedTabWidth;
@@ -179,18 +193,6 @@ namespace SourceGit.ViewModels
             set => SetProperty(ref _check4UpdatesOnStartup, value);
         }
 
-        public bool ShowAuthorTimeInGraph
-        {
-            get => _showAuthorTimeInGraph;
-            set => SetProperty(ref _showAuthorTimeInGraph, value);
-        }
-
-        public bool ShowChildren
-        {
-            get => _showChildren;
-            set => SetProperty(ref _showChildren, value);
-        }
-
         public string IgnoreUpdateTag
         {
             get => _ignoreUpdateTag;
@@ -201,6 +203,12 @@ namespace SourceGit.ViewModels
         {
             get => _showTagsInGraph;
             set => SetProperty(ref _showTagsInGraph, value);
+        }
+
+        public bool UseCompactBranchNamesInGraph
+        {
+            get => _useCompactBranchNamesInGraph;
+            set => SetProperty(ref _useCompactBranchNamesInGraph, value);
         }
 
         public bool UseTwoColumnsLayoutInHistories
@@ -229,16 +237,27 @@ namespace SourceGit.ViewModels
 
         public bool IgnoreCRAtEOLInDiff
         {
-            get => Models.DiffOption.IgnoreCRAtEOL;
-            set
-            {
-                if (Models.DiffOption.IgnoreCRAtEOL != value)
-                {
-                    Models.DiffOption.IgnoreCRAtEOL = value;
-                    OnPropertyChanged();
-                }
-            }
+            get => _ignoreCRAtEOLInDiff;
+            set => SetProperty(ref _ignoreCRAtEOLInDiff, value);
         }
+
+        public bool UseStashAndReapplyByDefault
+        {
+            get;
+            set;
+        } = false;
+
+        public bool EnableAutoFetch
+        {
+            get;
+            set;
+        } = false;
+
+        public int AutoFetchInterval
+        {
+            get;
+            set;
+        } = 10;
 
         public bool IgnoreWhitespaceChangesInDiff
         {
@@ -443,12 +462,6 @@ namespace SourceGit.ViewModels
             }
         }
 
-        public uint StatisticsSampleColor
-        {
-            get => _statisticsSampleColor;
-            set => SetProperty(ref _statisticsSampleColor, value);
-        }
-
         public List<RepositoryNode> RepositoryNodes
         {
             get;
@@ -467,7 +480,7 @@ namespace SourceGit.ViewModels
             set;
         } = [];
 
-        public AvaloniaList<Models.OpenAIService> OpenAIServices
+        public AvaloniaList<AI.Service> OpenAIServices
         {
             get;
             set;
@@ -603,19 +616,40 @@ namespace SourceGit.ViewModels
             RemoveInvalidRepositoriesRecursive(RepositoryNodes);
         }
 
+        public void UpdateAvailableAIModels()
+        {
+            Task.Run(() =>
+            {
+                foreach (var service in OpenAIServices)
+                {
+                    try
+                    {
+                        service.FetchAvailableModels();
+                    }
+                    catch
+                    {
+                        // Ignore errors.
+                    }
+                }
+            });
+        }
+
         public void Save()
         {
             if (_isLoading || _isReadonly)
                 return;
 
-            var file = Path.Combine(Native.OS.DataDir, "preference.json");
-            using var stream = File.Create(file);
-            JsonSerializer.Serialize(stream, this, JsonCodeGen.Default.Preferences);
+            var tmpfile = Path.Combine(Native.OS.BasicDirectories.ConfigDir, "preference_tmp.json");
+            var content = JsonSerializer.Serialize(this, JsonCodeGen.Default.Preferences);
+            File.WriteAllText(tmpfile, content);
+
+            var finalFile = Path.Combine(Native.OS.BasicDirectories.ConfigDir, "preference.json");
+            File.Move(tmpfile, finalFile, true);
         }
 
         private static Preferences Load()
         {
-            var path = Path.Combine(Native.OS.DataDir, "preference.json");
+            var path = Path.Combine(Native.OS.BasicDirectories.ConfigDir, "preference.json");
             if (!File.Exists(path))
                 return new Preferences();
 
@@ -772,8 +806,7 @@ namespace SourceGit.ViewModels
         private bool _useFixedTabWidth = true;
         private bool _useAutoHideScrollBars = true;
         private bool _useGitHubStyleAvatar = true;
-        private bool _showAuthorTimeInGraph = false;
-        private bool _showChildren = false;
+        private bool _useCompactBranchNamesInGraph = true;
 
         private bool _check4UpdatesOnStartup = true;
         private double _lastCheckUpdateTime = 0;
@@ -784,6 +817,7 @@ namespace SourceGit.ViewModels
         private bool _displayTimeAsPeriodInHistories = false;
         private bool _useSideBySideDiff = false;
         private bool _ignoreWhitespaceChangesInDiff = false;
+        private bool _ignoreCRAtEOLInDiff = true;
         private bool _useSyntaxHighlighting = false;
         private bool _enableDiffViewWordWrap = false;
         private bool _showHiddenSymbolsInDiffView = false;
@@ -799,6 +833,5 @@ namespace SourceGit.ViewModels
 
         private string _gitDefaultCloneDir = string.Empty;
         private int _shellOrTerminalType = -1;
-        private uint _statisticsSampleColor = 0xFF00FF00;
     }
 }

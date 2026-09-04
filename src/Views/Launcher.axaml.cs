@@ -1,34 +1,24 @@
-﻿using System;
+using System;
 
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
-using Avalonia.Platform;
-using Avalonia.VisualTree;
 
 namespace SourceGit.Views
 {
     public partial class Launcher : ChromelessWindow
     {
-        public static readonly StyledProperty<GridLength> CaptionHeightProperty =
-            AvaloniaProperty.Register<Launcher, GridLength>(nameof(CaptionHeight));
+        public static readonly DirectProperty<Launcher, GridLength> CaptionHeightProperty =
+            AvaloniaProperty.RegisterDirect<Launcher, GridLength>(
+                nameof(CaptionHeight),
+                static o => o.CaptionHeight);
 
         public GridLength CaptionHeight
         {
-            get => GetValue(CaptionHeightProperty);
-            set => SetValue(CaptionHeightProperty, value);
-        }
-
-        public static readonly StyledProperty<bool> HasLeftCaptionButtonProperty =
-            AvaloniaProperty.Register<Launcher, bool>(nameof(HasLeftCaptionButton));
-
-        public bool HasLeftCaptionButton
-        {
-            get => GetValue(HasLeftCaptionButtonProperty);
-            set => SetValue(HasLeftCaptionButtonProperty, value);
+            get => _captionHeight;
+            set => SetAndRaise(CaptionHeightProperty, ref _captionHeight, value);
         }
 
         public bool HasRightCaptionButton
@@ -45,33 +35,14 @@ namespace SourceGit.Views
         public Launcher()
         {
             if (OperatingSystem.IsMacOS())
-            {
-                HasLeftCaptionButton = true;
                 CaptionHeight = new GridLength(34);
-                ExtendClientAreaChromeHints |= ExtendClientAreaChromeHints.OSXThickTitleBar;
-            }
             else if (UseSystemWindowFrame)
-            {
                 CaptionHeight = new GridLength(30);
-            }
             else
-            {
                 CaptionHeight = new GridLength(38);
-            }
 
             InitializeComponent();
             PositionChanged += OnPositionChanged;
-
-            if (OperatingSystem.IsWindows() && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
-            {
-                Background = Brushes.Transparent;
-                TransparencyLevelHint = [WindowTransparencyLevel.Mica];
-                TitleBarBG.Background = Brushes.Transparent;
-            }
-            else
-            {
-                TitleBarBG.Bind(BackgroundProperty, new DynamicResourceExtension("Brush.TitleBar"));
-            }
 
             var layout = ViewModels.Preferences.Instance.Layout;
             Width = layout.LauncherWidth;
@@ -110,9 +81,8 @@ namespace SourceGit.Views
         {
             base.OnOpened(e);
 
-            var state = ViewModels.Preferences.Instance.Layout.LauncherWindowState;
-            if (state == WindowState.Maximized || state == WindowState.FullScreen)
-                WindowState = WindowState.Maximized;
+            var preferences = ViewModels.Preferences.Instance;
+            WindowState = preferences.Layout.LauncherWindowState;
         }
 
         protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -124,12 +94,23 @@ namespace SourceGit.Views
                 var state = (WindowState)change.NewValue!;
                 _lastWindowState = (WindowState)change.OldValue!;
 
-                if (OperatingSystem.IsMacOS())
-                    HasLeftCaptionButton = state != WindowState.FullScreen;
-                else if (!UseSystemWindowFrame)
+                if (!OperatingSystem.IsMacOS() && !UseSystemWindowFrame)
                     CaptionHeight = new GridLength(state == WindowState.Maximized ? 30 : 38);
 
                 ViewModels.Preferences.Instance.Layout.LauncherWindowState = state;
+            }
+            else if (change.Property == IsActiveProperty)
+            {
+                if (!IsActive && DataContext is ViewModels.Launcher { CommandPalette: { } } vm)
+                    vm.CommandPalette = null;
+            }
+
+            if (OperatingSystem.IsMacOS() && WindowState != WindowState.FullScreen)
+            {
+                if (change.Property == WindowStateProperty ||
+                    change.Property == BoundsProperty ||
+                    change.Property == TitleProperty)
+                    Native.MacOSUtilities.AdjustTrafficLightsForThickTitleBar(this);
             }
         }
 
@@ -162,18 +143,21 @@ namespace SourceGit.Views
             }
 
             // Register hotkeys for Windows/Linux (macOS has registered these keys in system menu bar)
-            if (!OperatingSystem.IsMacOS())
+            var isMacOS = OperatingSystem.IsMacOS();
+            var cmdKey = isMacOS ? KeyModifiers.Meta : KeyModifiers.Control;
+            if (!isMacOS)
             {
                 if (e is { KeyModifiers: KeyModifiers.Control, Key: Key.OemComma })
                 {
-                    await App.ShowDialog(new Preferences());
+                    await this.ShowDialogAsync(new Preferences());
                     e.Handled = true;
                     return;
                 }
 
                 if (e is { KeyModifiers: KeyModifiers.None, Key: Key.F1 })
                 {
-                    await App.ShowDialog(new Hotkeys());
+                    await this.ShowDialogAsync(new Hotkeys());
+                    e.Handled = true;
                     return;
                 }
 
@@ -184,7 +168,38 @@ namespace SourceGit.Views
                 }
             }
 
-            if (e.KeyModifiers.HasFlag(OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control))
+            // Ctrl+` to open terminal. On macOS, Cmd+` is used to switch between windows
+            if (e is { Key: Key.OemTilde, KeyModifiers: KeyModifiers.Control })
+            {
+                if (vm.ActivePage.Data is ViewModels.Repository repo)
+                    Native.OS.OpenTerminal(repo.FullPath);
+                else
+                    ViewModels.Welcome.Instance.OpenTerminal();
+
+                e.Handled = true;
+                return;
+            }
+
+            if (vm.CommandPalette != null)
+            {
+                if (e.Key == Key.Escape)
+                {
+                    vm.CommandPalette = null;
+                    e.Handled = true;
+                }
+                else if (vm.ActivePage.Data is ViewModels.Repository repo
+                    && vm.CommandPalette is ViewModels.LauncherPagesCommandPalette
+                    && e.Key == Key.P
+                    && e.KeyModifiers == (cmdKey | KeyModifiers.Shift))
+                {
+                    vm.CommandPalette = new ViewModels.RepositoryCommandPalette(repo);
+                    e.Handled = true;
+                }
+
+                return;
+            }
+
+            if (e.KeyModifiers.HasFlag(cmdKey))
             {
                 if (e.Key == Key.W)
                 {
@@ -193,7 +208,7 @@ namespace SourceGit.Views
                     return;
                 }
 
-                if (e.Key == Key.N)
+                if (e.Key == Key.R)
                 {
                     if (vm.ActivePage.Data is not ViewModels.Welcome)
                         vm.AddNewTab();
@@ -203,16 +218,33 @@ namespace SourceGit.Views
                     return;
                 }
 
-                if ((OperatingSystem.IsMacOS() && e.KeyModifiers.HasFlag(KeyModifiers.Alt) && e.Key == Key.Right) ||
-                    (!OperatingSystem.IsMacOS() && !e.KeyModifiers.HasFlag(KeyModifiers.Shift) && e.Key == Key.Tab))
+                if (e.Key == Key.L)
+                {
+                    if (vm.ActivePage.Data is not ViewModels.Welcome)
+                        vm.AddNewTab();
+
+                    ViewModels.Welcome.Instance.OpenLocalRepository();
+                    e.Handled = true;
+                    return;
+                }
+
+                if (e.Key == Key.T && e.KeyModifiers == cmdKey)
+                {
+                    vm.AddNewTab();
+                    e.Handled = true;
+                    return;
+                }
+
+                if ((isMacOS && e.KeyModifiers.HasFlag(KeyModifiers.Alt) && e.Key == Key.Right) ||
+                    (!isMacOS && !e.KeyModifiers.HasFlag(KeyModifiers.Shift) && e.Key == Key.Tab))
                 {
                     vm.GotoNextTab();
                     e.Handled = true;
                     return;
                 }
 
-                if ((OperatingSystem.IsMacOS() && e.KeyModifiers.HasFlag(KeyModifiers.Alt) && e.Key == Key.Left) ||
-                    (!OperatingSystem.IsMacOS() && e.KeyModifiers.HasFlag(KeyModifiers.Shift) && e.Key == Key.Tab))
+                if ((isMacOS && e.KeyModifiers.HasFlag(KeyModifiers.Alt) && e.Key == Key.Left) ||
+                    (!isMacOS && e.KeyModifiers.HasFlag(KeyModifiers.Shift) && e.Key == Key.Tab))
                 {
                     vm.GotoPrevTab();
                     e.Handled = true;
@@ -235,7 +267,7 @@ namespace SourceGit.Views
                             repo.SelectedViewIndex = 2;
                             e.Handled = true;
                             return;
-                        case Key.F:
+                        case Key.F when e.KeyModifiers.HasFlag(KeyModifiers.Shift):
                             repo.IsSearchingCommits = true;
                             e.Handled = true;
                             return;
@@ -244,32 +276,30 @@ namespace SourceGit.Views
                             e.Handled = true;
                             return;
                         case Key.P when e.KeyModifiers.HasFlag(KeyModifiers.Shift):
-                            vm.OpenCommandPalette(new ViewModels.RepositoryCommandPalette(vm, repo));
+                            vm.CommandPalette = new ViewModels.RepositoryCommandPalette(repo);
                             e.Handled = true;
                             return;
-                    }
-                }
-                else
-                {
-                    var welcome = this.FindDescendantOfType<Welcome>();
-                    if (welcome != null)
-                    {
-                        if (e.Key == Key.F)
-                        {
-                            welcome.SearchBox.Focus();
+                        case Key.B when e.KeyModifiers.HasFlag(KeyModifiers.Shift):
+                            if (repo.CanCreatePopup() && repo.GetSelectedCommitInHistory() is { } bc)
+                                repo.ShowPopup(new ViewModels.CreateBranch(repo, bc));
                             e.Handled = true;
                             return;
-                        }
+                        case Key.T when e.KeyModifiers.HasFlag(KeyModifiers.Shift):
+                            if (repo.CanCreatePopup() && repo.GetSelectedCommitInHistory() is { } tc)
+                                repo.ShowPopup(new ViewModels.CreateTag(repo, tc));
+                            e.Handled = true;
+                            return;
+                        case Key.E:
+                            Native.OS.OpenInFileManager(repo.FullPath);
+                            e.Handled = true;
+                            return;
                     }
                 }
             }
             else if (e.Key == Key.Escape)
             {
-                if (vm.CommandPalette != null)
-                    vm.CancelCommandPalette();
-                else
-                    vm.ActivePage.CancelPopup();
-
+                vm.ActivePage.CancelPopup();
+                vm.ActivePage.Notifications.Clear();
                 e.Handled = true;
                 return;
             }
@@ -292,15 +322,35 @@ namespace SourceGit.Views
             base.OnKeyDown(e);
         }
 
+        protected override void OnPointerPressed(PointerPressedEventArgs e)
+        {
+            base.OnPointerPressed(e);
+
+            if (!e.Handled)
+            {
+                if (e.Properties.PointerUpdateKind == PointerUpdateKind.XButton1Pressed)
+                    (DataContext as ViewModels.Launcher)?.GotoPrevTab();
+                else if (e.Properties.PointerUpdateKind == PointerUpdateKind.XButton2Pressed)
+                    (DataContext as ViewModels.Launcher)?.GotoNextTab();
+            }
+        }
+
         protected override void OnClosing(WindowClosingEventArgs e)
         {
             base.OnClosing(e);
 
             if (!Design.IsDesignMode && DataContext is ViewModels.Launcher launcher)
-            {
+                launcher.CloseAll();
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            base.OnClosed(e);
+
+            if (!Design.IsDesignMode)
                 ViewModels.Preferences.Instance.Save();
-                launcher.Quit();
-            }
+
+            App.Quit(0);
         }
 
         private void OnPositionChanged(object sender, PixelPointEventArgs e)
@@ -317,6 +367,9 @@ namespace SourceGit.Views
         {
             if (sender is Button btn && DataContext is ViewModels.Launcher launcher)
             {
+                if (launcher.CommandPalette != null)
+                    launcher.CommandPalette = null;
+
                 var pref = ViewModels.Preferences.Instance;
                 var menu = new ContextMenu();
                 menu.Placement = PlacementMode.BottomEdgeAlignedLeft;
@@ -337,7 +390,7 @@ namespace SourceGit.Views
                 {
                     var workspace = pref.Workspaces[i];
 
-                    var icon = App.CreateMenuIcon(workspace.IsActive ? "Icons.Check" : "Icons.Workspace");
+                    var icon = this.CreateMenuIcon(workspace.IsActive ? "Icons.Check" : "Icons.Workspace");
                     icon.Fill = workspace.Brush;
 
                     var item = new MenuItem();
@@ -360,7 +413,7 @@ namespace SourceGit.Views
                 configure.Header = App.Text("Workspace.Configure");
                 configure.Click += async (_, ev) =>
                 {
-                    await App.ShowDialog(new ViewModels.ConfigureWorkspace());
+                    await this.ShowDialogAsync(new ViewModels.ConfigureWorkspace());
                     ev.Handled = true;
                 };
                 menu.Items.Add(configure);
@@ -372,18 +425,34 @@ namespace SourceGit.Views
 
         private void OnOpenPagesCommandPalette(object sender, RoutedEventArgs e)
         {
-            if (DataContext is ViewModels.Launcher launcher)
-                launcher.OpenCommandPalette(new ViewModels.LauncherPagesCommandPalette(launcher));
+            if (DataContext is ViewModels.Launcher vm)
+                vm.CommandPalette = new ViewModels.LauncherPagesCommandPalette(vm);
             e.Handled = true;
         }
 
         private void OnCloseCommandPalette(object sender, PointerPressedEventArgs e)
         {
-            if (e.Source == sender && DataContext is ViewModels.Launcher launcher)
-                launcher.CancelCommandPalette();
+            if (e.Source == sender && DataContext is ViewModels.Launcher vm)
+                vm.CommandPalette = null;
             e.Handled = true;
         }
 
+        private async void OnShowNewVersion(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is ViewModels.Launcher { NewVersion: { } ver } vm)
+            {
+                vm.NewVersion = null;
+
+                var ctx = new ViewModels.SelfUpdate { Data = ver };
+                var dialog = new SelfUpdate() { DataContext = ctx };
+                await dialog.ShowDialog(this);
+            }
+
+            e.Handled = true;
+        }
+
+        private GridLength _captionHeight = new(32);
         private WindowState _lastWindowState = WindowState.Normal;
     }
 }
+

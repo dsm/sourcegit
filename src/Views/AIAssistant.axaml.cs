@@ -1,5 +1,4 @@
 using System;
-
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -9,19 +8,39 @@ using Avalonia.Media;
 using AvaloniaEdit;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Editing;
+using AvaloniaEdit.Rendering;
 using AvaloniaEdit.TextMate;
 
 namespace SourceGit.Views
 {
     public class AIResponseView : TextEditor
     {
-        public static readonly StyledProperty<string> ContentProperty =
-            AvaloniaProperty.Register<AIResponseView, string>(nameof(Content), string.Empty);
+        public class LineStyleTransformer : DocumentColorizingTransformer
+        {
+            protected override void ColorizeLine(DocumentLine line)
+            {
+                var content = CurrentContext.Document.GetText(line);
+                if (content.StartsWith("Read changes in file: ", StringComparison.Ordinal))
+                {
+                    ChangeLinePart(line.Offset + 22, line.EndOffset, v =>
+                    {
+                        v.TextRunProperties.SetForegroundBrush(Brushes.DeepSkyBlue);
+                        v.TextRunProperties.SetTextDecorations(TextDecorations.Underline);
+                    });
+                }
+            }
+        }
+
+        public static readonly DirectProperty<AIResponseView, string> ContentProperty =
+            AvaloniaProperty.RegisterDirect<AIResponseView, string>(
+                nameof(Content),
+                static o => o.Content,
+                static (o, v) => o.Content = v);
 
         public string Content
         {
-            get => GetValue(ContentProperty);
-            set => SetValue(ContentProperty, value);
+            get => _content;
+            set => SetAndRaise(ContentProperty, ref _content, value);
         }
 
         protected override Type StyleKeyOverride => typeof(TextEditor);
@@ -30,8 +49,7 @@ namespace SourceGit.Views
         {
             IsReadOnly = true;
             ShowLineNumbers = false;
-            WordWrap = true;
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
 
             TextArea.TextView.Margin = new Thickness(4, 0);
@@ -49,6 +67,7 @@ namespace SourceGit.Views
             {
                 _textMate = Models.TextMateHelper.CreateForEditor(this);
                 Models.TextMateHelper.SetGrammarByFileName(_textMate, "README.md");
+                TextArea.TextView.LineTransformers.Add(new LineStyleTransformer());
             }
         }
 
@@ -72,34 +91,38 @@ namespace SourceGit.Views
             base.OnPropertyChanged(change);
 
             if (change.Property == ContentProperty)
-                Text = Content;
+                Text = _content;
+            else if (change.Property.Name == nameof(ActualThemeVariant) && change.NewValue != null)
+                Models.TextMateHelper.SetThemeByApp(_textMate);
         }
 
         private void OnTextViewContextRequested(object sender, ContextRequestedEventArgs e)
         {
+            if (DataContext is not ViewModels.AIAssistant vm)
+                return;
+
             var selected = SelectedText;
             if (string.IsNullOrEmpty(selected))
                 return;
 
-            var copy = new MenuItem() { Header = App.Text("Copy") };
-            copy.Click += async (_, ev) =>
+            var apply = new MenuItem() { Header = App.Text("AIAssistant.Use") };
+            apply.Icon = this.CreateMenuIcon("Icons.Check");
+            apply.Click += (_, ev) =>
             {
-                await App.CopyTextAsync(selected);
+                vm.Use(selected);
                 ev.Handled = true;
             };
 
-            if (this.FindResource("Icons.Copy") is Geometry geo)
+            var copy = new MenuItem() { Header = App.Text("Copy") };
+            copy.Icon = this.CreateMenuIcon("Icons.Copy");
+            copy.Click += async (_, ev) =>
             {
-                copy.Icon = new Avalonia.Controls.Shapes.Path()
-                {
-                    Width = 10,
-                    Height = 10,
-                    Stretch = Stretch.Uniform,
-                    Data = geo,
-                };
-            }
+                await this.CopyTextAsync(selected);
+                ev.Handled = true;
+            };
 
             var menu = new ContextMenu();
+            menu.Items.Add(apply);
             menu.Items.Add(copy);
             menu.Open(TextArea.TextView);
 
@@ -107,6 +130,7 @@ namespace SourceGit.Views
         }
 
         private TextMate.Installation _textMate = null;
+        private string _content = string.Empty;
     }
 
     public partial class AIAssistant : ChromelessWindow
@@ -117,16 +141,43 @@ namespace SourceGit.Views
             InitializeComponent();
         }
 
+        protected override async void OnOpened(EventArgs e)
+        {
+            base.OnOpened(e);
+
+            if (DataContext is ViewModels.AIAssistant vm)
+                await vm.GenAsync();
+        }
+
         protected override void OnClosing(WindowClosingEventArgs e)
         {
             base.OnClosing(e);
             (DataContext as ViewModels.AIAssistant)?.Cancel();
         }
 
-        private void OnApply(object sender, RoutedEventArgs e)
+        private async void OnModelChanged(object sender, SelectionChangedEventArgs e)
         {
-            (DataContext as ViewModels.AIAssistant)?.Apply();
+            if (DataContext is ViewModels.AIAssistant vm && IsLoaded)
+                await vm.GenAsync();
+
+            e.Handled = true;
+        }
+
+        private void OnUseClicked(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is ViewModels.AIAssistant vm && !string.IsNullOrEmpty(vm.Response))
+                vm.Use(vm.Response);
+
             Close();
+            e.Handled = true;
+        }
+
+        private async void OnRegenClicked(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is ViewModels.AIAssistant vm)
+                await vm.GenAsync();
+
+            e.Handled = true;
         }
     }
 }

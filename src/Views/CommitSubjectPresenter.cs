@@ -77,8 +77,17 @@ namespace SourceGit.Views
             set => SetValue(LinkForegroundProperty, value);
         }
 
+        public static readonly StyledProperty<IBrush> InlineCodeForegroundProperty =
+            AvaloniaProperty.Register<CommitSubjectPresenter, IBrush>(nameof(InlineCodeForeground), Brushes.White);
+
+        public IBrush InlineCodeForeground
+        {
+            get => GetValue(InlineCodeForegroundProperty);
+            set => SetValue(InlineCodeForegroundProperty, value);
+        }
+
         public static readonly StyledProperty<bool> ShowStrikethroughProperty =
-            AvaloniaProperty.Register<CommitSubjectPresenter, bool>(nameof(ShowStrikethrough), false);
+            AvaloniaProperty.Register<CommitSubjectPresenter, bool>(nameof(ShowStrikethrough));
 
         public bool ShowStrikethrough
         {
@@ -86,22 +95,28 @@ namespace SourceGit.Views
             set => SetValue(ShowStrikethroughProperty, value);
         }
 
-        public static readonly StyledProperty<string> SubjectProperty =
-            AvaloniaProperty.Register<CommitSubjectPresenter, string>(nameof(Subject));
+        public static readonly DirectProperty<CommitSubjectPresenter, string> SubjectProperty =
+            AvaloniaProperty.RegisterDirect<CommitSubjectPresenter, string>(
+                nameof(Subject),
+                static o => o.Subject,
+                static (o, v) => o.Subject = v);
 
         public string Subject
         {
-            get => GetValue(SubjectProperty);
-            set => SetValue(SubjectProperty, value);
+            get => _subject;
+            set => SetAndRaise(SubjectProperty, ref _subject, value);
         }
 
-        public static readonly StyledProperty<AvaloniaList<Models.IssueTracker>> IssueTrackersProperty =
-            AvaloniaProperty.Register<CommitSubjectPresenter, AvaloniaList<Models.IssueTracker>>(nameof(IssueTrackers));
+        public static readonly DirectProperty<CommitSubjectPresenter, AvaloniaList<Models.IssueTracker>> IssueTrackersProperty =
+            AvaloniaProperty.RegisterDirect<CommitSubjectPresenter, AvaloniaList<Models.IssueTracker>>(
+                nameof(IssueTrackers),
+                static o => o.IssueTrackers,
+                static (o, v) => o.IssueTrackers = v);
 
         public AvaloniaList<Models.IssueTracker> IssueTrackers
         {
-            get => GetValue(IssueTrackersProperty);
-            set => SetValue(IssueTrackersProperty, value);
+            get => _issueTrackers;
+            set => SetAndRaise(IssueTrackersProperty, ref _issueTrackers, value);
         }
 
         public override void Render(DrawingContext context)
@@ -248,17 +263,35 @@ namespace SourceGit.Views
             foreach (var rule in rules)
                 rule.Matches(_elements, subject);
 
-            var keywordMatch = REG_KEYWORD_FORMAT().Match(subject);
-            if (keywordMatch.Success)
+            if (subject.StartsWith("fixup! ", StringComparison.Ordinal) || subject.StartsWith("amend! ", StringComparison.Ordinal))
             {
-                if (_elements.Intersect(0, keywordMatch.Length) == null)
-                    _elements.Add(new Models.InlineElement(Models.InlineElementType.Keyword, 0, keywordMatch.Length, string.Empty));
+                _elements.Add(new Models.InlineElement(Models.InlineElementType.Keyword, 0, 6, string.Empty));
+            }
+            else if (subject.StartsWith("squash! ", StringComparison.Ordinal))
+            {
+                _elements.Add(new Models.InlineElement(Models.InlineElementType.Keyword, 0, 7, string.Empty));
+            }
+            else if (subject.StartsWith('['))
+            {
+                var bracketIdx = subject.IndexOf(']');
+                if (bracketIdx > 1 && bracketIdx < 50 && _elements.Intersect(0, bracketIdx + 1) == null)
+                    _elements.Add(new Models.InlineElement(Models.InlineElementType.Keyword, 0, bracketIdx + 1, string.Empty));
             }
             else
             {
-                var colonIdx = subject.IndexOf(':', StringComparison.Ordinal);
-                if (colonIdx > 0 && colonIdx < 32 && colonIdx < subject.Length - 2 && char.IsWhiteSpace(subject[colonIdx + 1]) && _elements.Intersect(0, colonIdx + 1) == null)
+                var colonIdx = subject.IndexOf(": ", StringComparison.Ordinal);
+                if (colonIdx > 0 && colonIdx < 32 && colonIdx < subject.Length - 3 && subject.IndexOf('"', 0, colonIdx) == -1 && _elements.Intersect(0, colonIdx) == null)
+                {
                     _elements.Add(new Models.InlineElement(Models.InlineElementType.Keyword, 0, colonIdx + 1, string.Empty));
+                }
+                else
+                {
+                    var hyphenIdx = subject.IndexOf(" - ", StringComparison.Ordinal);
+                    if (hyphenIdx > 0 && hyphenIdx < 32 && hyphenIdx < subject.Length - 4 && subject.IndexOf('"', 0, hyphenIdx) == -1 && _elements.Intersect(0, hyphenIdx) == null)
+                    {
+                        _elements.Add(new Models.InlineElement(Models.InlineElementType.Keyword, 0, hyphenIdx, string.Empty));
+                    }
+                }
             }
 
             var codeMatches = REG_INLINECODE_FORMAT().Matches(subject);
@@ -287,6 +320,7 @@ namespace SourceGit.Views
             var codeFontFamily = CodeFontFamily;
             var fontSize = FontSize;
             var foreground = Foreground;
+            var inlineCodeForeground = InlineCodeForeground;
             var linkForeground = LinkForeground;
             var typeface = new Typeface(fontFamily, FontStyle.Normal, FontWeight);
             var codeTypeface = new Typeface(codeFontFamily, FontStyle.Normal, FontWeight);
@@ -341,7 +375,7 @@ namespace SourceGit.Views
                         FlowDirection.LeftToRight,
                         codeTypeface,
                         fontSize - 0.5,
-                        foreground);
+                        inlineCodeForeground);
                     _inlines.Add(new Inline(x, link, elem));
                     x += link.WidthIncludingTrailingWhitespace + 8;
                 }
@@ -376,9 +410,6 @@ namespace SourceGit.Views
         [GeneratedRegex(@"`.*?`")]
         private static partial Regex REG_INLINECODE_FORMAT();
 
-        [GeneratedRegex(@"^\[[^]]{1,48}?\]")]
-        private static partial Regex REG_KEYWORD_FORMAT();
-
         private class Inline
         {
             public double X { get; set; } = 0;
@@ -393,9 +424,11 @@ namespace SourceGit.Views
             }
         }
 
+        private string _subject = string.Empty;
+        private AvaloniaList<Models.IssueTracker> _issueTrackers = null;
         private Models.InlineElementCollector _elements = new();
-        private List<Inline> _inlines = [];
         private Models.InlineElement _lastHover = null;
+        private List<Inline> _inlines = [];
         private bool _needRebuildInlines = false;
     }
 }

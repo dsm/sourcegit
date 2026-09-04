@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 
 namespace SourceGit.Views
 {
@@ -18,6 +19,12 @@ namespace SourceGit.Views
         {
             base.OnLoaded(e);
             UpdateLeftSidebarLayout();
+        }
+
+        private void OnToggleFilter(object _, RoutedEventArgs e)
+        {
+            FilterBox.Focus();
+            e.Handled = true;
         }
 
         private void OnSearchCommitPanelPropertyChanged(object sender, AvaloniaPropertyChangedEventArgs e)
@@ -82,13 +89,13 @@ namespace SourceGit.Views
 
         private void OnWorktreeContextRequested(object sender, ContextRequestedEventArgs e)
         {
-            if (sender is ListBox { SelectedItem: Models.Worktree worktree } grid && DataContext is ViewModels.Repository repo)
+            if (sender is Control { DataContext: ViewModels.Worktree worktree } ctrl && DataContext is ViewModels.Repository repo)
             {
                 var menu = new ContextMenu();
 
                 var switchTo = new MenuItem();
                 switchTo.Header = App.Text("Worktree.Open");
-                switchTo.Icon = App.CreateMenuIcon("Icons.Folder.Open");
+                switchTo.Icon = this.CreateMenuIcon("Icons.Folder.Open");
                 switchTo.Click += (_, ev) =>
                 {
                     repo.OpenWorktree(worktree);
@@ -101,7 +108,7 @@ namespace SourceGit.Views
                 {
                     var unlock = new MenuItem();
                     unlock.Header = App.Text("Worktree.Unlock");
-                    unlock.Icon = App.CreateMenuIcon("Icons.Unlock");
+                    unlock.Icon = this.CreateMenuIcon("Icons.Unlock");
                     unlock.Click += async (_, ev) =>
                     {
                         await repo.UnlockWorktreeAsync(worktree);
@@ -113,7 +120,8 @@ namespace SourceGit.Views
                 {
                     var loc = new MenuItem();
                     loc.Header = App.Text("Worktree.Lock");
-                    loc.Icon = App.CreateMenuIcon("Icons.Lock");
+                    loc.Icon = this.CreateMenuIcon("Icons.Lock");
+                    loc.IsEnabled = !worktree.IsMain;
                     loc.Click += async (_, ev) =>
                     {
                         await repo.LockWorktreeAsync(worktree);
@@ -124,7 +132,8 @@ namespace SourceGit.Views
 
                 var remove = new MenuItem();
                 remove.Header = App.Text("Worktree.Remove");
-                remove.Icon = App.CreateMenuIcon("Icons.Clear");
+                remove.Icon = this.CreateMenuIcon("Icons.Clear");
+                remove.IsEnabled = !worktree.IsCurrent && !worktree.IsMain;
                 remove.Click += (_, ev) =>
                 {
                     if (repo.CanCreatePopup())
@@ -135,23 +144,23 @@ namespace SourceGit.Views
 
                 var copy = new MenuItem();
                 copy.Header = App.Text("Worktree.CopyPath");
-                copy.Icon = App.CreateMenuIcon("Icons.Copy");
+                copy.Icon = this.CreateMenuIcon("Icons.Copy");
                 copy.Click += async (_, ev) =>
                 {
-                    await App.CopyTextAsync(worktree.FullPath);
+                    await this.CopyTextAsync(worktree.FullPath);
                     ev.Handled = true;
                 };
                 menu.Items.Add(new MenuItem() { Header = "-" });
                 menu.Items.Add(copy);
-                menu.Open(grid);
+                menu.Open(ctrl);
             }
 
             e.Handled = true;
         }
 
-        private void OnDoubleTappedWorktree(object sender, TappedEventArgs e)
+        private void OnWorktreeDoubleTapped(object sender, TappedEventArgs e)
         {
-            if (sender is ListBox { SelectedItem: Models.Worktree worktree } && DataContext is ViewModels.Repository repo)
+            if (sender is Control { DataContext: ViewModels.Worktree worktree } && DataContext is ViewModels.Repository repo)
                 repo.OpenWorktree(worktree);
 
             e.Handled = true;
@@ -308,33 +317,51 @@ namespace SourceGit.Views
                 repo.SearchCommitContext.ClearSuggestions();
                 e.Handled = true;
             }
-            else if (e.Key == Key.Enter && SearchSuggestionBox.SelectedItem is string content)
+            else if (e.Key == Key.Enter)
             {
-                repo.SearchCommitContext.Filter = content;
-                TxtSearchCommitsBox.CaretIndex = content.Length;
+                var selected = SearchSuggestionBox.SelectedItem;
+                if (selected is string content)
+                {
+                    repo.SearchCommitContext.Filter = content;
+                    TxtSearchCommitsBox.CaretIndex = content.Length;
+                }
+                else if (selected is Models.User user)
+                {
+                    var apply = user.ToString().EscapeForBRE();
+                    repo.SearchCommitContext.Filter = apply;
+                    TxtSearchCommitsBox.CaretIndex = apply.Length;
+                }
+
                 repo.SearchCommitContext.StartSearch();
                 e.Handled = true;
             }
         }
 
-        private void OnSearchSuggestionDoubleTapped(object sender, TappedEventArgs e)
+        private void OnSearchSuggestionTapped(object sender, TappedEventArgs e)
         {
             if (DataContext is not ViewModels.Repository repo)
                 return;
 
-            var content = (sender as StackPanel)?.DataContext as string;
-            if (!string.IsNullOrEmpty(content))
+            var ctx = (sender as Control)?.DataContext;
+            if (ctx is string content)
             {
                 repo.SearchCommitContext.Filter = content;
                 TxtSearchCommitsBox.CaretIndex = content.Length;
-                repo.SearchCommitContext.StartSearch();
             }
+            else if (ctx is Models.User user)
+            {
+                var apply = user.ToString().EscapeForBRE();
+                repo.SearchCommitContext.Filter = apply;
+                TxtSearchCommitsBox.CaretIndex = apply.Length;
+            }
+
+            repo.SearchCommitContext.StartSearch();
             e.Handled = true;
         }
 
         private void OnOpenAdvancedHistoriesOption(object sender, RoutedEventArgs e)
         {
-            if (sender is Button button && DataContext is ViewModels.Repository repo)
+            if (sender is Button button && DataContext is ViewModels.Repository { Histories: { } histories } repo)
             {
                 var pref = ViewModels.Preferences.Instance;
 
@@ -346,7 +373,7 @@ namespace SourceGit.Views
                 var horizontal = new MenuItem();
                 horizontal.Header = App.Text("Repository.HistoriesLayout.Horizontal");
                 if (isHorizontal)
-                    horizontal.Icon = App.CreateMenuIcon("Icons.Check");
+                    horizontal.Icon = this.CreateMenuIcon("Icons.Check");
                 horizontal.Click += (_, ev) =>
                 {
                     pref.UseTwoColumnsLayoutInHistories = true;
@@ -356,7 +383,7 @@ namespace SourceGit.Views
                 var vertical = new MenuItem();
                 vertical.Header = App.Text("Repository.HistoriesLayout.Vertical");
                 if (!isHorizontal)
-                    vertical.Icon = App.CreateMenuIcon("Icons.Check");
+                    vertical.Icon = this.CreateMenuIcon("Icons.Check");
                 vertical.Click += (_, ev) =>
                 {
                     pref.UseTwoColumnsLayoutInHistories = false;
@@ -371,7 +398,7 @@ namespace SourceGit.Views
                 reflog.Header = App.Text("Repository.ShowLostCommits");
                 reflog.Tag = "--reflog";
                 if (repo.HistoryShowFlags.HasFlag(Models.HistoryShowFlags.Reflog))
-                    reflog.Icon = App.CreateMenuIcon("Icons.Check");
+                    reflog.Icon = this.CreateMenuIcon("Icons.Check");
                 reflog.Click += (_, ev) =>
                 {
                     repo.ToggleHistoryShowFlag(Models.HistoryShowFlags.Reflog);
@@ -382,7 +409,7 @@ namespace SourceGit.Views
                 firstParentOnly.Header = App.Text("Repository.ShowFirstParentOnly");
                 firstParentOnly.Tag = "--first-parent";
                 if (repo.HistoryShowFlags.HasFlag(Models.HistoryShowFlags.FirstParentOnly))
-                    firstParentOnly.Icon = App.CreateMenuIcon("Icons.Check");
+                    firstParentOnly.Icon = this.CreateMenuIcon("Icons.Check");
                 firstParentOnly.Click += (_, ev) =>
                 {
                     repo.ToggleHistoryShowFlag(Models.HistoryShowFlags.FirstParentOnly);
@@ -393,7 +420,7 @@ namespace SourceGit.Views
                 simplifyByDecoration.Header = App.Text("Repository.ShowDecoratedCommitsOnly");
                 simplifyByDecoration.Tag = "--simplify-by-decoration";
                 if (repo.HistoryShowFlags.HasFlag(Models.HistoryShowFlags.SimplifyByDecoration))
-                    simplifyByDecoration.Icon = App.CreateMenuIcon("Icons.Check");
+                    simplifyByDecoration.Icon = this.CreateMenuIcon("Icons.Check");
                 simplifyByDecoration.Click += (_, ev) =>
                 {
                     repo.ToggleHistoryShowFlag(Models.HistoryShowFlags.SimplifyByDecoration);
@@ -408,7 +435,7 @@ namespace SourceGit.Views
                 dateOrder.Header = App.Text("Repository.HistoriesOrder.ByDate");
                 dateOrder.Tag = "--date-order";
                 if (!repo.EnableTopoOrderInHistory)
-                    dateOrder.Icon = App.CreateMenuIcon("Icons.Check");
+                    dateOrder.Icon = this.CreateMenuIcon("Icons.Check");
                 dateOrder.Click += (_, ev) =>
                 {
                     repo.EnableTopoOrderInHistory = false;
@@ -419,10 +446,64 @@ namespace SourceGit.Views
                 topoOrder.Header = App.Text("Repository.HistoriesOrder.Topo");
                 topoOrder.Tag = "--topo-order";
                 if (repo.EnableTopoOrderInHistory)
-                    topoOrder.Icon = App.CreateMenuIcon("Icons.Check");
+                    topoOrder.Icon = this.CreateMenuIcon("Icons.Check");
                 topoOrder.Click += (_, ev) =>
                 {
                     repo.EnableTopoOrderInHistory = true;
+                    ev.Handled = true;
+                };
+
+                var highlights = new MenuItem();
+                highlights.Header = App.Text("Histories.HighlightsInGraph");
+                highlights.IsEnabled = false;
+
+                var all = new MenuItem();
+                all.Header = App.Text("Histories.HighlightsInGraph.All");
+                if (histories.GraphHighlighting == Models.CommitGraphHighlighting.All)
+                    all.Icon = this.CreateMenuIcon("Icons.Check");
+                all.Click += (_, ev) =>
+                {
+                    histories.GraphHighlighting = Models.CommitGraphHighlighting.All;
+                    ev.Handled = true;
+                };
+
+                var currentBranchOnly = new MenuItem();
+                currentBranchOnly.Header = App.Text("Histories.HighlightsInGraph.CurrentBranchOnly");
+                if (histories.GraphHighlighting == Models.CommitGraphHighlighting.CurrentBranchOnly)
+                    currentBranchOnly.Icon = this.CreateMenuIcon("Icons.Check");
+                currentBranchOnly.Click += (_, ev) =>
+                {
+                    histories.GraphHighlighting = Models.CommitGraphHighlighting.CurrentBranchOnly;
+                    ev.Handled = true;
+                };
+
+                var selectedCommitsOnly = new MenuItem();
+                selectedCommitsOnly.Header = App.Text("Histories.HighlightsInGraph.SelectedCommitsOnly");
+                if (histories.GraphHighlighting == Models.CommitGraphHighlighting.SelectedCommitsOnly)
+                    selectedCommitsOnly.Icon = this.CreateMenuIcon("Icons.Check");
+                selectedCommitsOnly.Click += (_, ev) =>
+                {
+                    histories.GraphHighlighting = Models.CommitGraphHighlighting.SelectedCommitsOnly;
+                    ev.Handled = true;
+                };
+
+                var selectedCommitsOnlyFirstParent = new MenuItem();
+                selectedCommitsOnlyFirstParent.Header = App.Text("Histories.HighlightsInGraph.SelectedCommitsOnlyFirstParent");
+                if (histories.GraphHighlighting == Models.CommitGraphHighlighting.SelectedCommitsOnlyFirstParent)
+                    selectedCommitsOnlyFirstParent.Icon = this.CreateMenuIcon("Icons.Check");
+                selectedCommitsOnlyFirstParent.Click += (_, ev) =>
+                {
+                    histories.GraphHighlighting = Models.CommitGraphHighlighting.SelectedCommitsOnlyFirstParent;
+                    ev.Handled = true;
+                };
+
+                var currentBranchAndSelectedCommits = new MenuItem();
+                currentBranchAndSelectedCommits.Header = App.Text("Histories.HighlightsInGraph.CurrentBranchAndSelectedCommits");
+                if (histories.GraphHighlighting == Models.CommitGraphHighlighting.CurrentBranchAndSelectedCommits)
+                    currentBranchAndSelectedCommits.Icon = this.CreateMenuIcon("Icons.Check");
+                currentBranchAndSelectedCommits.Click += (_, ev) =>
+                {
+                    histories.GraphHighlighting = Models.CommitGraphHighlighting.CurrentBranchAndSelectedCommits;
                     ev.Handled = true;
                 };
 
@@ -440,6 +521,13 @@ namespace SourceGit.Views
                 menu.Items.Add(order);
                 menu.Items.Add(dateOrder);
                 menu.Items.Add(topoOrder);
+                menu.Items.Add(new MenuItem() { Header = "-" });
+                menu.Items.Add(highlights);
+                menu.Items.Add(all);
+                menu.Items.Add(currentBranchOnly);
+                menu.Items.Add(selectedCommitsOnly);
+                menu.Items.Add(selectedCommitsOnlyFirstParent);
+                menu.Items.Add(currentBranchAndSelectedCommits);
                 menu.Open(button);
             }
 
@@ -454,7 +542,7 @@ namespace SourceGit.Views
                 var byNameAsc = new MenuItem();
                 byNameAsc.Header = App.Text("Repository.BranchSort.ByName");
                 if (isSortByName)
-                    byNameAsc.Icon = App.CreateMenuIcon("Icons.Check");
+                    byNameAsc.Icon = this.CreateMenuIcon("Icons.Check");
                 byNameAsc.Click += (_, ev) =>
                 {
                     if (!isSortByName)
@@ -465,7 +553,7 @@ namespace SourceGit.Views
                 var byCommitterDate = new MenuItem();
                 byCommitterDate.Header = App.Text("Repository.BranchSort.ByCommitterDate");
                 if (!isSortByName)
-                    byCommitterDate.Icon = App.CreateMenuIcon("Icons.Check");
+                    byCommitterDate.Icon = this.CreateMenuIcon("Icons.Check");
                 byCommitterDate.Click += (_, ev) =>
                 {
                     if (isSortByName)
@@ -491,7 +579,7 @@ namespace SourceGit.Views
                 var byNameAsc = new MenuItem();
                 byNameAsc.Header = App.Text("Repository.BranchSort.ByName");
                 if (isSortByName)
-                    byNameAsc.Icon = App.CreateMenuIcon("Icons.Check");
+                    byNameAsc.Icon = this.CreateMenuIcon("Icons.Check");
                 byNameAsc.Click += (_, ev) =>
                 {
                     if (!isSortByName)
@@ -502,7 +590,7 @@ namespace SourceGit.Views
                 var byCommitterDate = new MenuItem();
                 byCommitterDate.Header = App.Text("Repository.BranchSort.ByCommitterDate");
                 if (!isSortByName)
-                    byCommitterDate.Icon = App.CreateMenuIcon("Icons.Check");
+                    byCommitterDate.Icon = this.CreateMenuIcon("Icons.Check");
                 byCommitterDate.Click += (_, ev) =>
                 {
                     if (isSortByName)
@@ -528,7 +616,7 @@ namespace SourceGit.Views
                 var byCreatorDate = new MenuItem();
                 byCreatorDate.Header = App.Text("Repository.Tags.OrderByCreatorDate");
                 if (!isSortByName)
-                    byCreatorDate.Icon = App.CreateMenuIcon("Icons.Check");
+                    byCreatorDate.Icon = this.CreateMenuIcon("Icons.Check");
                 byCreatorDate.Click += (_, ev) =>
                 {
                     if (isSortByName)
@@ -539,7 +627,7 @@ namespace SourceGit.Views
                 var byName = new MenuItem();
                 byName.Header = App.Text("Repository.Tags.OrderByName");
                 if (isSortByName)
-                    byName.Icon = App.CreateMenuIcon("Icons.Check");
+                    byName.Icon = this.CreateMenuIcon("Icons.Check");
                 byName.Click += (_, ev) =>
                 {
                     if (!isSortByName)
@@ -605,6 +693,15 @@ namespace SourceGit.Views
                 await repo.ExecBisectCommandAsync(button.Tag as string);
 
             e.Handled = true;
+        }
+
+        private void OnRightPagePropertyChanged(object sender, AvaloniaPropertyChangedEventArgs e)
+        {
+            if (e.Property == Border.IsVisibleProperty && sender is Border page)
+            {
+                var diffViewer = page.FindDescendantOfType<DiffView>();
+                diffViewer?.ToggleHotkeyBindings(page.IsVisible);
+            }
         }
     }
 }

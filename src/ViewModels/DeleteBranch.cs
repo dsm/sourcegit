@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+﻿using System;
+using System.Threading.Tasks;
 
 namespace SourceGit.ViewModels
 {
@@ -9,21 +10,26 @@ namespace SourceGit.ViewModels
             get;
         }
 
-        public Models.Branch TrackingRemoteBranch
+        public Models.Branch Upstream
         {
             get;
         }
 
-        public string DeleteTrackingRemoteTip
+        public string DeleteUpstreamTip
         {
             get;
-            private set;
         }
 
-        public bool AlsoDeleteTrackingRemote
+        public bool DeleteUpstream
         {
-            get => _alsoDeleteTrackingRemote;
-            set => SetProperty(ref _alsoDeleteTrackingRemote, value);
+            get;
+            set;
+        }
+
+        public bool Force
+        {
+            get;
+            set;
         }
 
         public DeleteBranch(Repository repo, Models.Branch branch)
@@ -33,9 +39,12 @@ namespace SourceGit.ViewModels
 
             if (branch.IsLocal && !string.IsNullOrEmpty(branch.Upstream))
             {
-                TrackingRemoteBranch = repo.Branches.Find(x => x.FullName == branch.Upstream);
-                if (TrackingRemoteBranch != null)
-                    DeleteTrackingRemoteTip = App.Text("DeleteBranch.WithTrackingRemote", TrackingRemoteBranch.FriendlyName);
+                var upstream = _repo.Branches.Find(x => x.FullName.Equals(branch.Upstream, StringComparison.Ordinal));
+                if (upstream != null && upstream.Name.Equals(branch.Name, StringComparison.Ordinal))
+                {
+                    Upstream = upstream;
+                    DeleteUpstreamTip = App.Text("DeleteBranch.WithTrackingRemote", upstream.FriendlyName);
+                }
             }
         }
 
@@ -47,49 +56,60 @@ namespace SourceGit.ViewModels
             var log = _repo.CreateLog("Delete Branch");
             Use(log);
 
+            var succ = false;
             if (Target.IsLocal)
             {
-                await new Commands.Branch(_repo.FullPath, Target.Name)
-                    .Use(log)
-                    .DeleteLocalAsync();
-                _repo.UIStates.RemoveHistoryFilter(Target.FullName, Models.FilterType.LocalBranch);
-
-                if (_alsoDeleteTrackingRemote && TrackingRemoteBranch != null)
+                do
                 {
-                    await DeleteRemoteBranchAsync(TrackingRemoteBranch, log);
-                    _repo.UIStates.RemoveHistoryFilter(TrackingRemoteBranch.FullName, Models.FilterType.RemoteBranch);
-                }
+                    succ = await new Commands.Branch(_repo.FullPath, Target.Name)
+                        .Use(log)
+                        .DeleteLocalAsync(Force);
+
+                    if (!succ)
+                        break;
+
+                    _repo.UIStates.RemoveHistoryFilter(Target.FullName, Models.FilterType.LocalBranch);
+
+                    if (!DeleteUpstream || Upstream == null)
+                        break;
+
+                    succ = await DeleteRemoteBranchAsync(Upstream, log);
+                    if (!succ)
+                        break;
+
+                    _repo.UIStates.RemoveHistoryFilter(Upstream.FullName, Models.FilterType.RemoteBranch);
+                } while (false);
             }
             else
             {
-                await DeleteRemoteBranchAsync(Target, log);
-                _repo.UIStates.RemoveHistoryFilter(Target.FullName, Models.FilterType.RemoteBranch);
+                succ = await DeleteRemoteBranchAsync(Target, log);
+                if (succ)
+                    _repo.UIStates.RemoveHistoryFilter(Target.FullName, Models.FilterType.RemoteBranch);
             }
 
             log.Complete();
             _repo.MarkBranchesDirtyManually();
-            return true;
+            return succ;
         }
 
-        private async Task DeleteRemoteBranchAsync(Models.Branch branch, CommandLog log)
+        private async Task<bool> DeleteRemoteBranchAsync(Models.Branch branch, CommandLog log)
         {
             var exists = await new Commands.Remote(_repo.FullPath)
                 .HasBranchAsync(branch.Remote, branch.Name)
                 .ConfigureAwait(false);
 
             if (exists)
-                await new Commands.Push(_repo.FullPath, branch.Remote, $"refs/heads/{branch.Name}", true)
+                return await new Commands.Push(_repo.FullPath, branch.Remote, $"refs/heads/{branch.Name}", true)
                     .Use(log)
                     .RunAsync()
                     .ConfigureAwait(false);
             else
-                await new Commands.Branch(_repo.FullPath, branch.Name)
+                return await new Commands.Branch(_repo.FullPath, branch.Name)
                     .Use(log)
-                    .DeleteRemoteAsync(branch.Remote)
+                    .DeleteRemoteAsync(branch.Remote, Force)
                     .ConfigureAwait(false);
         }
 
         private readonly Repository _repo = null;
-        private bool _alsoDeleteTrackingRemote = false;
     }
 }

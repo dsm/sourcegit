@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Globalization;
 using System.Text;
 
@@ -95,7 +94,7 @@ namespace SourceGit.Views
             public override void Render(DrawingContext context)
             {
                 var pen = new Pen(Brushes.DarkGray);
-                context.DrawLine(pen, new Point(0, 0), new Point(0, Bounds.Height));
+                context.DrawLine(pen, new Point(0.5, 0), new Point(0.5, Bounds.Height));
             }
 
             protected override Size MeasureOverride(Size availableSize)
@@ -122,7 +121,7 @@ namespace SourceGit.Views
                 {
                     ChangeLinePart(line.Offset, line.EndOffset, element =>
                     {
-                        element.TextRunProperties.SetTypeface(new Typeface(_presenter.FontFamily, FontStyle.Italic, FontWeight.Normal));
+                        element.TextRunProperties.SetTypeface(new Typeface(_presenter.FontFamily, FontStyle.Italic));
                         element.TextRunProperties.SetForegroundBrush(Brushes.Gray);
                     });
                 }
@@ -150,6 +149,7 @@ namespace SourceGit.Views
                     return;
 
                 var width = textView.Bounds.Width;
+                var pixelHeight = PixelSnapHelpers.GetPixelSize(_presenter).Height;
                 foreach (var line in textView.VisualLines)
                 {
                     if (line.IsDisposed || line.FirstDocumentLine == null || line.FirstDocumentLine.IsDeleted)
@@ -168,15 +168,18 @@ namespace SourceGit.Views
                     var endY = line.GetTextLineVisualYPosition(line.TextLines[^1], VisualYPosition.LineBottom) - textView.VerticalOffset;
                     var rect = new Rect(0, startY, width, endY - startY);
 
+                    var alignedTop = PixelSnapHelpers.PixelAlign(startY, pixelHeight);
+                    var alignedBottom = PixelSnapHelpers.PixelAlign(endY, pixelHeight);
+
                     var lineState = vm.GetLineState(lineIndex);
                     if (lineState == Models.ConflictLineState.ConflictBlockStart)
-                        drawingContext.DrawLine(new Pen(new SolidColorBrush(Colors.Red, 0.6)), new Point(0, startY + 0.5), new Point(width, startY + 0.5));
+                        drawingContext.DrawLine(new Pen(new SolidColorBrush(Colors.Red, 0.6)), new Point(0, alignedTop), new Point(width, alignedTop));
                     else if (lineState == Models.ConflictLineState.ConflictBlockEnd)
-                        drawingContext.DrawLine(new Pen(new SolidColorBrush(Colors.Red, 0.6)), new Point(0, endY - 0.5), new Point(width, endY - 0.5));
+                        drawingContext.DrawLine(new Pen(new SolidColorBrush(Colors.Red, 0.6)), new Point(0, alignedBottom), new Point(width, alignedBottom));
                     else if (lineState == Models.ConflictLineState.ResolvedBlockStart)
-                        drawingContext.DrawLine(new Pen(new SolidColorBrush(Colors.Green, 0.6)), new Point(0, startY + 0.5), new Point(width, startY + 0.5));
+                        drawingContext.DrawLine(new Pen(new SolidColorBrush(Colors.Green, 0.6)), new Point(0, alignedTop), new Point(width, alignedTop));
                     else if (lineState == Models.ConflictLineState.ResolvedBlockEnd)
-                        drawingContext.DrawLine(new Pen(new SolidColorBrush(Colors.Green, 0.6)), new Point(0, endY - 0.5), new Point(width, endY - 0.5));
+                        drawingContext.DrawLine(new Pen(new SolidColorBrush(Colors.Green, 0.6)), new Point(0, alignedBottom), new Point(width, alignedBottom));
 
                     if (lineState >= Models.ConflictLineState.ResolvedBlockStart)
                         drawingContext.DrawRectangle(new SolidColorBrush(Colors.Green, 0.1), null, rect);
@@ -198,40 +201,75 @@ namespace SourceGit.Views
             private readonly MergeConflictTextPresenter _presenter;
         }
 
-        public static readonly StyledProperty<string> FileNameProperty =
-            AvaloniaProperty.Register<MergeConflictTextPresenter, string>(nameof(FileName), string.Empty);
+        public static readonly DirectProperty<MergeConflictTextPresenter, string> FileNameProperty =
+            AvaloniaProperty.RegisterDirect<MergeConflictTextPresenter, string>(
+                nameof(FileName),
+                static o => o.FileName,
+                static (o, v) => o.FileName = v);
 
         public string FileName
         {
-            get => GetValue(FileNameProperty);
-            set => SetValue(FileNameProperty, value);
+            get => _fileName;
+            set => SetAndRaise(FileNameProperty, ref _fileName, value);
         }
 
-        public static readonly StyledProperty<Models.ConflictPanelType> PanelTypeProperty =
-            AvaloniaProperty.Register<MergeConflictTextPresenter, Models.ConflictPanelType>(nameof(PanelType));
+        public static readonly DirectProperty<MergeConflictTextPresenter, Models.ConflictPanelType> PanelTypeProperty =
+            AvaloniaProperty.RegisterDirect<MergeConflictTextPresenter, Models.ConflictPanelType>(
+                nameof(PanelType),
+                static o => o.PanelType,
+                static (o, v) => o.PanelType = v);
 
         public Models.ConflictPanelType PanelType
         {
-            get => GetValue(PanelTypeProperty);
-            set => SetValue(PanelTypeProperty, value);
+            get => _panelType;
+            set => SetAndRaise(PanelTypeProperty, ref _panelType, value);
         }
 
-        public static readonly StyledProperty<List<Models.ConflictLine>> LinesProperty =
-            AvaloniaProperty.Register<MergeConflictTextPresenter, List<Models.ConflictLine>>(nameof(Lines));
+        public static readonly DirectProperty<MergeConflictTextPresenter, List<Models.ConflictLine>> LinesProperty =
+            AvaloniaProperty.RegisterDirect<MergeConflictTextPresenter, List<Models.ConflictLine>>(
+                nameof(Lines),
+                static o => o.Lines,
+                static (o, v) => o.Lines = v);
 
         public List<Models.ConflictLine> Lines
         {
-            get => GetValue(LinesProperty);
-            set => SetValue(LinesProperty, value);
+            get => _lines;
+            set => SetAndRaise(LinesProperty, ref _lines, value);
         }
 
-        public static readonly StyledProperty<int> MaxLineNumberProperty =
-            AvaloniaProperty.Register<MergeConflictTextPresenter, int>(nameof(MaxLineNumber));
+        public static readonly DirectProperty<MergeConflictTextPresenter, int> MaxLineNumberProperty =
+            AvaloniaProperty.RegisterDirect<MergeConflictTextPresenter, int>(
+                nameof(MaxLineNumber),
+                static o => o.MaxLineNumber,
+                static (o, v) => o.MaxLineNumber = v);
 
         public int MaxLineNumber
         {
-            get => GetValue(MaxLineNumberProperty);
-            set => SetValue(MaxLineNumberProperty, value);
+            get => _maxLineNumber;
+            set => SetAndRaise(MaxLineNumberProperty, ref _maxLineNumber, value);
+        }
+
+        public static readonly DirectProperty<MergeConflictTextPresenter, Models.ConflictSelectedChunk> SelectedChunkProperty =
+            AvaloniaProperty.RegisterDirect<MergeConflictTextPresenter, Models.ConflictSelectedChunk>(
+                nameof(SelectedChunk),
+                static o => o.SelectedChunk,
+                static (o, v) => o.SelectedChunk = v);
+
+        public Models.ConflictSelectedChunk SelectedChunk
+        {
+            get => _selectedChunk;
+            set => SetAndRaise(SelectedChunkProperty, ref _selectedChunk, value);
+        }
+
+        public static readonly DirectProperty<MergeConflictTextPresenter, ViewModels.TextLineRange> DisplayRangeProperty =
+            AvaloniaProperty.RegisterDirect<MergeConflictTextPresenter, ViewModels.TextLineRange>(
+                nameof(DisplayRange),
+                static o => o.DisplayRange);
+
+        public ViewModels.TextLineRange DisplayRange
+        {
+            get => _displayRange;
+            set => SetAndRaise(DisplayRangeProperty, ref _displayRange, value);
         }
 
         public static readonly StyledProperty<IBrush> OursContentBackgroundProperty =
@@ -250,24 +288,6 @@ namespace SourceGit.Views
         {
             get => GetValue(TheirsContentBackgroundProperty);
             set => SetValue(TheirsContentBackgroundProperty, value);
-        }
-
-        public static readonly StyledProperty<Models.ConflictSelectedChunk> SelectedChunkProperty =
-            AvaloniaProperty.Register<MergeConflictTextPresenter, Models.ConflictSelectedChunk>(nameof(SelectedChunk));
-
-        public Models.ConflictSelectedChunk SelectedChunk
-        {
-            get => GetValue(SelectedChunkProperty);
-            set => SetValue(SelectedChunkProperty, value);
-        }
-
-        public static readonly StyledProperty<ViewModels.TextLineRange> DisplayRangeProperty =
-            AvaloniaProperty.Register<MergeConflictTextPresenter, ViewModels.TextLineRange>(nameof(DisplayRange));
-
-        public ViewModels.TextLineRange DisplayRange
-        {
-            get => GetValue(DisplayRangeProperty);
-            set => SetValue(DisplayRangeProperty, value);
         }
 
         protected override Type StyleKeyOverride => typeof(TextEditor);
@@ -347,8 +367,6 @@ namespace SourceGit.Views
                 Models.TextMateHelper.SetThemeByApp(_textMate);
             else if (change.Property == SelectedChunkProperty)
                 TextArea.TextView.InvalidateVisual();
-            else if (change.Property == MaxLineNumberProperty)
-                TextArea.LeftMargins[0].InvalidateMeasure();
         }
 
         private void UpdateContent()
@@ -387,10 +405,10 @@ namespace SourceGit.Views
 
             var copy = new MenuItem();
             copy.Header = App.Text("Copy");
-            copy.Icon = App.CreateMenuIcon("Icons.Copy");
+            copy.Icon = this.CreateMenuIcon("Icons.Copy");
             copy.Click += async (_, ev) =>
             {
-                await App.CopyTextAsync(selected);
+                await this.CopyTextAsync(selected);
                 ev.Handled = true;
             };
 
@@ -406,7 +424,7 @@ namespace SourceGit.Views
             if (DataContext is not ViewModels.MergeConflictEditor vm)
                 return;
 
-            if (sender is not TextView view)
+            if (sender is not TextView { VisualLinesValid: true } view)
                 return;
 
             UpdateSelectedChunkPosition(vm, e.GetPosition(view).Y + view.VerticalOffset);
@@ -417,7 +435,7 @@ namespace SourceGit.Views
             if (DataContext is not ViewModels.MergeConflictEditor vm)
                 return;
 
-            if (sender is not TextView view)
+            if (sender is not TextView { VisualLinesValid: true } view)
                 return;
 
             var y = e.GetPosition(view).Y + view.VerticalOffset;
@@ -431,9 +449,12 @@ namespace SourceGit.Views
 
             if (!TextArea.TextView.VisualLinesValid)
             {
-                SetCurrentValue(DisplayRangeProperty, null);
+                DisplayRange = null;
                 return;
             }
+
+            foreach (var margin in TextArea.LeftMargins)
+                margin.InvalidateMeasure();
 
             var lines = Lines;
             var start = int.MaxValue;
@@ -452,7 +473,7 @@ namespace SourceGit.Views
                     start = index;
             }
 
-            SetCurrentValue(DisplayRangeProperty, new ViewModels.TextLineRange(start, start + count));
+            DisplayRange = new(start, start + count);
         }
 
         private void OnTextViewScrollChanged(object sender, ScrollChangedEventArgs e)
@@ -525,7 +546,7 @@ namespace SourceGit.Views
                     var endVisualLine = view.GetVisualLine(endLine);
                     var topY = startVisualLine?.GetTextLineVisualYPosition(startVisualLine.TextLines[0], VisualYPosition.LineTop) ?? vOffset;
                     var bottomY = endVisualLine?.GetTextLineVisualYPosition(endVisualLine.TextLines[^1], VisualYPosition.LineBottom) ?? (view.Bounds.Height + vOffset);
-                    vm.SelectedChunk = new Models.ConflictSelectedChunk(topY - vOffset, bottomY - topY, i, panel, r.IsResolved);
+                    vm.SelectedChunk = new(topY - vOffset, bottomY - topY, i, panel, r.IsResolved);
                     return;
                 }
             }
@@ -533,28 +554,40 @@ namespace SourceGit.Views
             vm.SelectedChunk = null;
         }
 
+        private string _fileName = string.Empty;
+        private Models.ConflictPanelType _panelType = Models.ConflictPanelType.Result;
+        private List<Models.ConflictLine> _lines;
+        private int _maxLineNumber = 0;
+        private ViewModels.TextLineRange _displayRange = null;
+        private Models.ConflictSelectedChunk _selectedChunk = null;
         private TextMate.Installation _textMate;
         private ScrollViewer _scrollViewer;
     }
 
     public class MergeConflictMinimap : Control
     {
-        public static readonly StyledProperty<ViewModels.TextLineRange> DisplayRangeProperty =
-            AvaloniaProperty.Register<MergeConflictMinimap, ViewModels.TextLineRange>(nameof(DisplayRange));
+        public static readonly DirectProperty<MergeConflictMinimap, ViewModels.TextLineRange> DisplayRangeProperty =
+            AvaloniaProperty.RegisterDirect<MergeConflictMinimap, ViewModels.TextLineRange>(
+                nameof(DisplayRange),
+                static o => o.DisplayRange,
+                static (o, v) => o.DisplayRange = v);
 
         public ViewModels.TextLineRange DisplayRange
         {
-            get => GetValue(DisplayRangeProperty);
-            set => SetValue(DisplayRangeProperty, value);
+            get => _displayRange;
+            set => SetAndRaise(DisplayRangeProperty, ref _displayRange, value);
         }
 
-        public static readonly StyledProperty<int> UnsolvedCountProperty =
-            AvaloniaProperty.Register<MergeConflictMinimap, int>(nameof(UnsolvedCount));
+        public static readonly DirectProperty<MergeConflictMinimap, int> UnsolvedCountProperty =
+            AvaloniaProperty.RegisterDirect<MergeConflictMinimap, int>(
+                nameof(UnsolvedCount),
+                static o => o.UnsolvedCount,
+                static (o, v) => o.UnsolvedCount = v);
 
         public int UnsolvedCount
         {
-            get => GetValue(UnsolvedCountProperty);
-            set => SetValue(UnsolvedCountProperty, value);
+            get => _unsolvedCount;
+            set => SetAndRaise(UnsolvedCountProperty, ref _unsolvedCount, value);
         }
 
         public override void Render(DrawingContext context)
@@ -567,7 +600,7 @@ namespace SourceGit.Views
             var total = vm.OursLines.Count;
             var unitHeight = Bounds.Height / (total * 1.0);
             var conflicts = vm.ConflictRegions;
-            var blockBGs = new SolidColorBrush[] { new SolidColorBrush(Colors.Red, 0.6), new SolidColorBrush(Colors.Green, 0.6) };
+            var blockBGs = new SolidColorBrush[] { new(Colors.Red, 0.6), new(Colors.Green, 0.6) };
             foreach (var c in conflicts)
             {
                 var topY = c.StartLineInOriginal * unitHeight;
@@ -582,7 +615,7 @@ namespace SourceGit.Views
 
             var startY = range.Start * unitHeight;
             var endY = range.End * unitHeight;
-            var color = (Color)this.FindResource("SystemAccentColor");
+            var color = (Color)this.FindResource("SystemAccentColor")!;
             var brush = new SolidColorBrush(color, 0.2);
             var pen = new Pen(color.ToUInt32());
             var rect = new Rect(0, startY, Bounds.Width, endY - startY);
@@ -626,21 +659,37 @@ namespace SourceGit.Views
             if (editor != null)
                 editor.OursPresenter.ScrollToLine(line);
         }
+
+        private ViewModels.TextLineRange _displayRange = null;
+        private int _unsolvedCount = 0;
     }
 
     public partial class MergeConflictEditor : ChromelessWindow
     {
+        public static readonly DirectProperty<MergeConflictEditor, Models.ConflictSelectedChunk> SelectedChunkProperty =
+            AvaloniaProperty.RegisterDirect<MergeConflictEditor, Models.ConflictSelectedChunk>(
+                nameof(SelectedChunk),
+                static o => o.SelectedChunk,
+                static (o, v) => o.SelectedChunk = v);
+
+        public Models.ConflictSelectedChunk SelectedChunk
+        {
+            get => _selectedChunk;
+            set => SetAndRaise(SelectedChunkProperty, ref _selectedChunk, value);
+        }
+
         public MergeConflictEditor()
         {
             InitializeComponent();
+            Bind(SelectedChunkProperty, new Binding("SelectedChunk", BindingMode.OneWay));
         }
 
-        protected override void OnDataContextChanged(EventArgs e)
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
         {
-            base.OnDataContextChanged(e);
+            base.OnPropertyChanged(change);
 
-            if (DataContext is ViewModels.MergeConflictEditor vm)
-                vm.PropertyChanged += OnViewModelPropertyChanged;
+            if (change.Property == SelectedChunkProperty)
+                UpdatePopupVisibility();
         }
 
         protected override async void OnClosing(WindowClosingEventArgs e)
@@ -651,15 +700,12 @@ namespace SourceGit.Views
                 return;
 
             if (_forceClose || vm.UnsolvedCount == vm.ConflictRegions.Count)
-            {
-                vm.PropertyChanged -= OnViewModelPropertyChanged;
                 return;
-            }
 
             e.Cancel = true;
 
             var confirm = new Confirm();
-            confirm.SetData(App.Text("MergeConflictEditor.UnsavedChanges"), Models.ConfirmButtonType.OkCancel);
+            confirm.SetData(App.Text("MergeConflictEditor.UnsavedChanges"), Models.ConfirmButtonType.YesNo);
 
             var result = await confirm.ShowDialog<bool>(this);
             if (result)
@@ -673,12 +719,6 @@ namespace SourceGit.Views
         {
             base.OnClosed(e);
             GC.Collect();
-        }
-
-        private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName == nameof(ViewModels.MergeConflictEditor.SelectedChunk))
-                UpdatePopupVisibility();
         }
 
         private void OnGotoPrevConflict(object sender, RoutedEventArgs e)
@@ -780,6 +820,11 @@ namespace SourceGit.Views
             }
         }
 
+        private void CloseWindow(object sender, RoutedEventArgs e)
+        {
+            Close();
+        }
+
         private void UpdatePopupVisibility()
         {
             // Hide all popups first
@@ -796,7 +841,7 @@ namespace SourceGit.Views
                 return;
 
             // Get the presenter for bounds checking
-            MergeConflictTextPresenter presenter = chunk.Panel switch
+            var presenter = chunk.Panel switch
             {
                 Models.ConflictPanelType.Ours => OursPresenter,
                 Models.ConflictPanelType.Theirs => TheirsPresenter,
@@ -805,7 +850,7 @@ namespace SourceGit.Views
             };
 
             // Show the appropriate popup based on panel type and resolved state
-            Border popup = chunk.Panel switch
+            var popup = chunk.Panel switch
             {
                 Models.ConflictPanelType.Ours => MinePopup,
                 Models.ConflictPanelType.Theirs => TheirsPopup,
@@ -829,5 +874,6 @@ namespace SourceGit.Views
         }
 
         private bool _forceClose = false;
+        private Models.ConflictSelectedChunk _selectedChunk = null;
     }
 }

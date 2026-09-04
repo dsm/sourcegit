@@ -8,6 +8,15 @@ namespace SourceGit.Models
 {
     public record CommitGraphLayout(double StartY, double ClipWidth, double RowHeight);
 
+    public enum CommitGraphHighlighting
+    {
+        All = 0,
+        CurrentBranchOnly,
+        SelectedCommitsOnly,
+        CurrentBranchAndSelectedCommits,
+        SelectedCommitsOnlyFirstParent,
+    }
+
     public class CommitGraph
     {
         public static List<Pen> Pens { get; } = [];
@@ -27,11 +36,11 @@ namespace SourceGit.Models
             s_penCount = colors.Count;
         }
 
-        public class Path(int color, bool isMerged)
+        public class Path(int color, bool isHighlighted)
         {
             public List<Point> Points { get; } = [];
             public int Color { get; } = color;
-            public bool IsMerged { get; } = isMerged;
+            public bool IsHighlighted { get; } = isHighlighted;
         }
 
         public class Link
@@ -40,7 +49,7 @@ namespace SourceGit.Models
             public Point Control;
             public Point End;
             public int Color;
-            public bool IsMerged;
+            public bool IsHighlighted;
         }
 
         public enum DotType
@@ -55,14 +64,14 @@ namespace SourceGit.Models
             public DotType Type;
             public Point Center;
             public int Color;
-            public bool IsMerged;
+            public bool IsHighlighted;
         }
 
         public List<Path> Paths { get; } = [];
         public List<Link> Links { get; } = [];
         public List<Dot> Dots { get; } = [];
 
-        public static CommitGraph Parse(List<Commit> commits, bool firstParentOnlyEnabled)
+        public static CommitGraph Generate(List<Commit> commits, bool firstParentOnlyEnabled, CommitGraphHighlighting highlighting, HashSet<string> highlightExtraCommits)
         {
             const double unitWidth = 12;
             const double halfWidth = 6;
@@ -74,11 +83,11 @@ namespace SourceGit.Models
             var ended = new List<PathHelper>();
             var offsetY = -halfHeight;
             var colorPicker = new ColorPicker();
+            var defHighlighting = highlighting == CommitGraphHighlighting.All;
 
             foreach (var commit in commits)
             {
                 PathHelper major = null;
-                var isMerged = commit.IsMerged;
 
                 // Update current y offset
                 offsetY += unitHeight;
@@ -86,6 +95,7 @@ namespace SourceGit.Models
                 // Find first curves that links to this commit and marks others that links to this commit ended.
                 var offsetX = 4 - halfWidth;
                 var maxOffsetOld = unsolved.Count > 0 ? unsolved[^1].LastX : offsetX + unitWidth;
+                var isHighlighted = defHighlighting;
                 foreach (var l in unsolved)
                 {
                     if (l.Next.Equals(commit.SHA, StringComparison.Ordinal))
@@ -94,6 +104,7 @@ namespace SourceGit.Models
                         {
                             offsetX += unitWidth;
                             major = l;
+                            isHighlighted = major.IsHighlighted;
 
                             if (commit.Parents.Count > 0)
                             {
@@ -110,9 +121,10 @@ namespace SourceGit.Models
                         {
                             l.End(major.LastX, offsetY, halfHeight);
                             ended.Add(l);
-                        }
 
-                        isMerged = isMerged || l.IsMerged;
+                            if (!isHighlighted && l.IsHighlighted)
+                                isHighlighted = true;
+                        }
                     }
                     else
                     {
@@ -129,6 +141,41 @@ namespace SourceGit.Models
                 }
                 ended.Clear();
 
+                // Calculate highlighted state
+                if (!isHighlighted)
+                {
+                    switch (highlighting)
+                    {
+                        case CommitGraphHighlighting.CurrentBranchOnly:
+                            isHighlighted = commit.IsMerged;
+                            break;
+                        case CommitGraphHighlighting.SelectedCommitsOnly:
+                        case CommitGraphHighlighting.SelectedCommitsOnlyFirstParent:
+                            if (highlightExtraCommits.Remove(commit.SHA))
+                            {
+                                isHighlighted = true;
+                                // Highlight first parent, other parents are dealt with later
+                                if (commit.Parents.Count > 0)
+                                    highlightExtraCommits.Add(commit.Parents[0]);
+                            }
+                            break;
+                        default: // CommitGraphHighlighting.CurrentBranchAndSelectedCommits
+                            if (commit.IsMerged)
+                            {
+                                isHighlighted = true;
+                            }
+                            else if (highlightExtraCommits.Remove(commit.SHA))
+                            {
+                                isHighlighted = true;
+                                // Highlight first parent, other parents are dealt with later
+                                if (commit.Parents.Count > 0)
+                                    highlightExtraCommits.Add(commit.Parents[0]);
+                            }
+                            break;
+                    }
+                }
+                commit.IsHighlightedInGraph = isHighlighted;
+
                 // If no path found, create new curve for branch head
                 // Otherwise, create new curve for new merged commit
                 if (major == null)
@@ -137,21 +184,21 @@ namespace SourceGit.Models
 
                     if (commit.Parents.Count > 0)
                     {
-                        major = new PathHelper(commit.Parents[0], isMerged, colorPicker.Next(), new Point(offsetX, offsetY));
+                        major = new PathHelper(commit.Parents[0], isHighlighted, colorPicker.Next(), new Point(offsetX, offsetY));
                         unsolved.Add(major);
                         temp.Paths.Add(major.Path);
                     }
                 }
-                else if (isMerged && !major.IsMerged && commit.Parents.Count > 0)
+                else if (isHighlighted && !major.IsHighlighted && commit.Parents.Count > 0)
                 {
-                    major.ReplaceMerged();
+                    major.Highlight();
                     temp.Paths.Add(major.Path);
                 }
 
                 // Calculate link position of this commit.
                 var position = new Point(major?.LastX ?? offsetX, offsetY);
                 var dotColor = major?.Path.Color ?? 0;
-                var anchor = new Dot() { Center = position, Color = dotColor, IsMerged = isMerged };
+                var anchor = new Dot() { Center = position, Color = dotColor, IsHighlighted = isHighlighted };
                 if (commit.IsCurrentHead)
                     anchor.Type = DotType.Head;
                 else if (commit.Parents.Count > 1)
@@ -163,16 +210,19 @@ namespace SourceGit.Models
                 // Deal with other parents (the first parent has been processed)
                 if (!firstParentOnlyEnabled)
                 {
+                    if (highlighting == CommitGraphHighlighting.SelectedCommitsOnlyFirstParent)
+                        isHighlighted = false;
+
                     for (int j = 1; j < commit.Parents.Count; j++)
                     {
                         var parentHash = commit.Parents[j];
                         var parent = unsolved.Find(x => x.Next.Equals(parentHash, StringComparison.Ordinal));
                         if (parent != null)
                         {
-                            if (isMerged && !parent.IsMerged)
+                            if (isHighlighted && !parent.IsHighlighted)
                             {
                                 parent.Goto(parent.LastX, offsetY + halfHeight, halfHeight);
-                                parent.ReplaceMerged();
+                                parent.Highlight();
                                 temp.Paths.Add(parent.Path);
                             }
 
@@ -182,7 +232,7 @@ namespace SourceGit.Models
                                 End = new Point(parent.LastX, offsetY + halfHeight),
                                 Control = new Point(parent.LastX, position.Y),
                                 Color = parent.Path.Color,
-                                IsMerged = isMerged,
+                                IsHighlighted = isHighlighted,
                             });
                         }
                         else
@@ -190,15 +240,14 @@ namespace SourceGit.Models
                             offsetX += unitWidth;
 
                             // Create new curve for parent commit that not includes before
-                            var l = new PathHelper(parentHash, isMerged, colorPicker.Next(), position, new Point(offsetX, position.Y + halfHeight));
+                            var l = new PathHelper(parentHash, isHighlighted, colorPicker.Next(), position, new Point(offsetX, position.Y + halfHeight));
                             unsolved.Add(l);
                             temp.Paths.Add(l.Path);
                         }
                     }
                 }
 
-                // Margins & merge state (used by Views.Histories).
-                commit.IsMerged = isMerged;
+                // Margins & colors (used by Views.Histories).
                 commit.Color = dotColor;
                 commit.LeftMargin = Math.Max(offsetX, maxOffsetOld) + halfWidth + 2;
             }
@@ -246,26 +295,25 @@ namespace SourceGit.Models
             public Path Path { get; private set; }
             public string Next { get; set; }
             public double LastX { get; private set; }
+            public bool IsHighlighted { get => Path.IsHighlighted; }
 
-            public bool IsMerged => Path.IsMerged;
-
-            public PathHelper(string next, bool isMerged, int color, Point start)
+            public PathHelper(string next, bool IsHighlighted, int color, Point start)
             {
                 Next = next;
                 LastX = start.X;
                 _lastY = start.Y;
 
-                Path = new Path(color, isMerged);
+                Path = new Path(color, IsHighlighted);
                 Path.Points.Add(start);
             }
 
-            public PathHelper(string next, bool isMerged, int color, Point start, Point to)
+            public PathHelper(string next, bool IsHighlighted, int color, Point start, Point to)
             {
                 Next = next;
                 LastX = to.X;
                 _lastY = to.Y;
 
-                Path = new Path(color, isMerged);
+                Path = new Path(color, IsHighlighted);
                 Path.Points.Add(start);
                 Path.Points.Add(to);
             }
@@ -346,9 +394,9 @@ namespace SourceGit.Models
             }
 
             /// <summary>
-            ///     End the current path and create a new from the end.
+            ///     End the current path and create a new highlighted from the end.
             /// </summary>
-            public void ReplaceMerged()
+            public void Highlight()
             {
                 var color = Path.Color;
                 Add(LastX, _lastY);

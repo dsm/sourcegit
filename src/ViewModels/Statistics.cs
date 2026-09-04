@@ -1,8 +1,6 @@
-﻿using System.Threading.Tasks;
-
-using Avalonia.Media;
+﻿using System.Collections.Generic;
+using System.Threading.Tasks;
 using Avalonia.Threading;
-
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace SourceGit.ViewModels
@@ -15,12 +13,28 @@ namespace SourceGit.ViewModels
             private set => SetProperty(ref _isLoading, value);
         }
 
-        public int SelectedIndex
+        public List<Models.Branch> Branches
         {
-            get => _selectedIndex;
+            get => _branches;
+            private set => SetProperty(ref _branches, value);
+        }
+
+        public Models.Branch SelectedBranch
+        {
+            get => _selectedBranch;
             set
             {
-                if (SetProperty(ref _selectedIndex, value))
+                if (SetProperty(ref _selectedBranch, value))
+                    LoadStatistics();
+            }
+        }
+
+        public Models.StatisticsMode ViewMode
+        {
+            get => _viewMode;
+            set
+            {
+                if (SetProperty(ref _viewMode, value))
                     RefreshReport();
             }
         }
@@ -28,37 +42,53 @@ namespace SourceGit.ViewModels
         public Models.StatisticsReport SelectedReport
         {
             get => _selectedReport;
-            private set
-            {
-                value?.ChangeAuthor(null);
-                SetProperty(ref _selectedReport, value);
-            }
+            private set => SetProperty(ref _selectedReport, value);
         }
 
-        public uint SampleColor
+        public Models.StatisticsSamples Samples
         {
-            get => Preferences.Instance.StatisticsSampleColor;
-            set
-            {
-                if (value != Preferences.Instance.StatisticsSampleColor)
-                {
-                    Preferences.Instance.StatisticsSampleColor = value;
-                    OnPropertyChanged(nameof(SampleBrush));
-                    _selectedReport?.ChangeColor(value);
-                }
-            }
-        }
-
-        public IBrush SampleBrush
-        {
-            get => new SolidColorBrush(SampleColor);
+            get => _samples;
+            private set => SetProperty(ref _samples, value);
         }
 
         public Statistics(string repo)
         {
+            _repo = repo;
+            LoadBranches();
+            LoadStatistics();
+        }
+
+        public void ChangeAuthor(Models.StatisticsAuthor author)
+        {
+            if (SelectedReport == null)
+                return;
+
+            Samples = SelectedReport.GetSamples(author);
+        }
+
+        private void LoadBranches()
+        {
             Task.Run(async () =>
             {
-                var result = await new Commands.Statistics(repo, Preferences.Instance.MaxHistoryCommits).ReadAsync().ConfigureAwait(false);
+                var branches = await new Commands.QueryBranches(_repo)
+                    .GetResultAsync()
+                    .ConfigureAwait(false);
+
+                branches.Insert(0, _selectedBranch);
+                Dispatcher.UIThread.Post(() => Branches = branches);
+            });
+        }
+
+        private void LoadStatistics()
+        {
+            IsLoading = true;
+
+            Task.Run(async () =>
+            {
+                var result = await new Commands.Statistics(_repo, Preferences.Instance.MaxHistoryCommits, _selectedBranch)
+                    .ReadAsync()
+                    .ConfigureAwait(false);
+
                 Dispatcher.UIThread.Post(() =>
                 {
                     _data = result;
@@ -73,20 +103,23 @@ namespace SourceGit.ViewModels
             if (_data == null)
                 return;
 
-            var report = _selectedIndex switch
+            SelectedReport = _viewMode switch
             {
-                0 => _data.All,
-                1 => _data.Month,
+                Models.StatisticsMode.All => _data.All,
+                Models.StatisticsMode.ThisMonth => _data.Month,
                 _ => _data.Week,
             };
 
-            report.ChangeColor(SampleColor);
-            SelectedReport = report;
+            Samples = SelectedReport.GetSamples(null);
         }
 
+        private string _repo = null;
         private bool _isLoading = true;
+        private List<Models.Branch> _branches = new List<Models.Branch>();
+        private Models.Branch _selectedBranch = new Models.Branch() { Name = "--- (All)", IsLocal = true, FullName = "", Head = "---" }; // Fake branch to represent all branches
         private Models.Statistics _data = null;
+        private Models.StatisticsMode _viewMode = Models.StatisticsMode.All;
         private Models.StatisticsReport _selectedReport = null;
-        private int _selectedIndex = 0;
+        private Models.StatisticsSamples _samples = null;
     }
 }

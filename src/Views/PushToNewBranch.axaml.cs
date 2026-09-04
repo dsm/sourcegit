@@ -1,3 +1,4 @@
+using Avalonia.Input;
 using Avalonia.Interactivity;
 
 namespace SourceGit.Views
@@ -10,14 +11,16 @@ namespace SourceGit.Views
             InitializeComponent();
         }
 
-        public void SetRemote(string remote)
+        protected override void OnLoaded(RoutedEventArgs e)
         {
-            TxtPrefix.Text = remote;
+            base.OnLoaded(e);
+            TxtName.Focus(NavigationMethod.Directional);
         }
 
         private void OnSure(object _1, RoutedEventArgs _2)
         {
-            Close(TxtName.Text);
+            if (DataContext is ViewModels.PushToNewBranch { HasErrors: false } vm && vm.Check())
+                Close(vm.BranchName);
         }
 
         private void OnCancel(object _1, RoutedEventArgs _2)

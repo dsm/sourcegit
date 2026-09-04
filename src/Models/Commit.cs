@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace SourceGit.Models
 {
@@ -7,16 +8,13 @@ namespace SourceGit.Models
     {
         BySHA = 0,
         ByAuthor,
-        ByCommitter,
         ByMessage,
         ByPath,
         ByContent,
     }
 
-    public class Commit
+    public class Commit : ObservableObject
     {
-        public const string EmptyTreeSHA1 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-
         public string SHA { get; set; } = string.Empty;
         public User Author { get; set; } = User.Invalid;
         public ulong AuthorTime { get; set; } = 0;
@@ -30,14 +28,16 @@ namespace SourceGit.Models
         public int Color { get; set; } = 0;
         public double LeftMargin { get; set; } = 0;
 
-        public string AuthorTimeStr => DateTime.UnixEpoch.AddSeconds(AuthorTime).ToLocalTime().ToString(DateTimeFormat.Active.DateTime);
-        public string CommitterTimeStr => DateTime.UnixEpoch.AddSeconds(CommitterTime).ToLocalTime().ToString(DateTimeFormat.Active.DateTime);
-        public string AuthorTimeShortStr => DateTime.UnixEpoch.AddSeconds(AuthorTime).ToLocalTime().ToString(DateTimeFormat.Active.DateOnly);
-        public string CommitterTimeShortStr => DateTime.UnixEpoch.AddSeconds(CommitterTime).ToLocalTime().ToString(DateTimeFormat.Active.DateOnly);
+        public bool IsHighlightedInGraph
+        {
+            get => _isHighlightedInGraph;
+            set => SetProperty(ref _isHighlightedInGraph, value);
+        }
 
         public bool IsCommitterVisible => !Author.Equals(Committer) || AuthorTime != CommitterTime;
         public bool IsCurrentHead => Decorators.Find(x => x.Type is DecoratorType.CurrentBranchHead or DecoratorType.CurrentCommitHead) != null;
         public bool HasDecorators => Decorators.Count > 0;
+        public string FirstParentToCompare => Parents.Count > 0 ? $"{SHA}^" : EmptyTreeHash.Guess(SHA);
 
         public string GetFriendlyName()
         {
@@ -124,6 +124,8 @@ namespace SourceGit.Models
                 return NumericSort.Compare(l.Name, r.Name);
             });
         }
+
+        private bool _isHighlightedInGraph = false;
     }
 
     public class CommitFullMessage

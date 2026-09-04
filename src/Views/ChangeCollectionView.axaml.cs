@@ -21,6 +21,10 @@ namespace SourceGit.Views
             if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed &&
                 DataContext is ViewModels.ChangeTreeNode { IsFolder: true } node)
             {
+                var container = this.FindAncestorOfType<ChangeCollectionContainer>();
+                if (container != null)
+                    container.SelectedItem = node;
+
                 var tree = this.FindAncestorOfType<ChangeCollectionView>();
                 tree?.ToggleNodeIsExpanded(node);
             }
@@ -29,72 +33,125 @@ namespace SourceGit.Views
         }
     }
 
-    public class ChangeCollectionContainer : ListBox
+    public class ChangeCollectionContainer : ListBoxEx
     {
         protected override Type StyleKeyOverride => typeof(ListBox);
 
         protected override void OnKeyDown(KeyEventArgs e)
         {
-            if (SelectedItems is [ViewModels.ChangeTreeNode node])
+            if (SelectedItems is [ViewModels.ChangeTreeNode node] && e.KeyModifiers == KeyModifiers.None)
             {
-                if (((e.Key == Key.Left && node.IsExpanded) || (e.Key == Key.Right && !node.IsExpanded)) &&
-                    e.KeyModifiers == KeyModifiers.None)
+                if (e.Key == Key.Left)
                 {
-                    this.FindAncestorOfType<ChangeCollectionView>()?.ToggleNodeIsExpanded(node);
-                    e.Handled = true;
+                    if (node.IsExpanded && node.IsFolder)
+                    {
+                        this.FindAncestorOfType<ChangeCollectionView>()?.ToggleNodeIsExpanded(node);
+                        e.Handled = true;
+                    }
+                    else if (FindParent(node) is { } parent)
+                    {
+                        Select(parent);
+                        e.Handled = true;
+                    }
+                }
+                else if (e.Key == Key.Right && node.IsFolder)
+                {
+                    if (!node.IsExpanded)
+                    {
+                        this.FindAncestorOfType<ChangeCollectionView>()?.ToggleNodeIsExpanded(node);
+                        e.Handled = true;
+                    }
+                    else if (node.Children.Count > 0)
+                    {
+                        Select(node.Children[0]);
+                        e.Handled = true;
+                    }
                 }
             }
 
-            if (!e.Handled && e.Key != Key.Space && e.Key != Key.Enter)
+            if (!e.Handled)
                 base.OnKeyDown(e);
+        }
+
+        private ViewModels.ChangeTreeNode FindParent(ViewModels.ChangeTreeNode item)
+        {
+            if (item.Depth == 0)
+                return null;
+
+            var idx = Items.IndexOf(item);
+            if (idx < 1)
+                return null;
+
+            for (var i = idx - 1; i >= 0; i--)
+            {
+                if (Items[i] is ViewModels.ChangeTreeNode node && node.Depth < item.Depth)
+                    return node;
+            }
+
+            return null;
         }
     }
 
     public partial class ChangeCollectionView : UserControl
     {
-        public static readonly StyledProperty<bool> IsUnstagedChangeProperty =
-            AvaloniaProperty.Register<ChangeCollectionView, bool>(nameof(IsUnstagedChange));
+        public static readonly DirectProperty<ChangeCollectionView, bool> IsUnstagedChangeProperty =
+            AvaloniaProperty.RegisterDirect<ChangeCollectionView, bool>(
+                nameof(IsUnstagedChange),
+                static o => o.IsUnstagedChange,
+                static (o, v) => o.IsUnstagedChange = v);
 
         public bool IsUnstagedChange
         {
-            get => GetValue(IsUnstagedChangeProperty);
-            set => SetValue(IsUnstagedChangeProperty, value);
+            get => _isUnstagedChange;
+            set => SetAndRaise(IsUnstagedChangeProperty, ref _isUnstagedChange, value);
         }
 
-        public static readonly StyledProperty<Models.ChangeViewMode> ViewModeProperty =
-            AvaloniaProperty.Register<ChangeCollectionView, Models.ChangeViewMode>(nameof(ViewMode), Models.ChangeViewMode.Tree);
+        public static readonly DirectProperty<ChangeCollectionView, Models.ChangeViewMode> ViewModeProperty =
+            AvaloniaProperty.RegisterDirect<ChangeCollectionView, Models.ChangeViewMode>(
+                nameof(ViewMode),
+                static o => o.ViewMode,
+                static (o, v) => o.ViewMode = v);
 
         public Models.ChangeViewMode ViewMode
         {
-            get => GetValue(ViewModeProperty);
-            set => SetValue(ViewModeProperty, value);
+            get => _viewMode;
+            set => SetAndRaise(ViewModeProperty, ref _viewMode, value);
         }
 
-        public static readonly StyledProperty<bool> EnableCompactFoldersProperty =
-            AvaloniaProperty.Register<ChangeCollectionView, bool>(nameof(EnableCompactFolders));
+        public static readonly DirectProperty<ChangeCollectionView, bool> EnableCompactFoldersProperty =
+            AvaloniaProperty.RegisterDirect<ChangeCollectionView, bool>(
+                nameof(EnableCompactFolders),
+                static o => o.EnableCompactFolders,
+                static (o, v) => o.EnableCompactFolders = v);
 
         public bool EnableCompactFolders
         {
-            get => GetValue(EnableCompactFoldersProperty);
-            set => SetValue(EnableCompactFoldersProperty, value);
+            get => _enableCompactFolders;
+            set => SetAndRaise(EnableCompactFoldersProperty, ref _enableCompactFolders, value);
         }
 
-        public static readonly StyledProperty<List<Models.Change>> ChangesProperty =
-            AvaloniaProperty.Register<ChangeCollectionView, List<Models.Change>>(nameof(Changes));
+        public static readonly DirectProperty<ChangeCollectionView, List<Models.Change>> ChangesProperty =
+            AvaloniaProperty.RegisterDirect<ChangeCollectionView, List<Models.Change>>(
+                nameof(Changes),
+                static o => o.Changes,
+                static (o, v) => o.Changes = v);
 
         public List<Models.Change> Changes
         {
-            get => GetValue(ChangesProperty);
-            set => SetValue(ChangesProperty, value);
+            get => _changes;
+            set => SetAndRaise(ChangesProperty, ref _changes, value);
         }
 
-        public static readonly StyledProperty<List<Models.Change>> SelectedChangesProperty =
-            AvaloniaProperty.Register<ChangeCollectionView, List<Models.Change>>(nameof(SelectedChanges));
+        public static readonly DirectProperty<ChangeCollectionView, List<Models.Change>> SelectedChangesProperty =
+            AvaloniaProperty.RegisterDirect<ChangeCollectionView, List<Models.Change>>(
+                nameof(SelectedChanges),
+                static o => o.SelectedChanges,
+                static (o, v) => o.SelectedChanges = v);
 
         public List<Models.Change> SelectedChanges
         {
-            get => GetValue(SelectedChangesProperty);
-            set => SetValue(SelectedChangesProperty, value);
+            get => _selectedChanges;
+            set => SetAndRaise(SelectedChangesProperty, ref _selectedChanges, value);
         }
 
         public static readonly RoutedEvent<RoutedEventArgs> ChangeDoubleTappedEvent =
@@ -147,7 +204,7 @@ namespace SourceGit.Views
 
         public Models.Change GetNextChangeWithoutSelection()
         {
-            var selected = SelectedChanges;
+            var selected = _selectedChanges;
             var changes = Changes;
             if (selected == null || selected.Count == 0)
                 return changes.Count > 0 ? changes[0] : null;
@@ -231,17 +288,17 @@ namespace SourceGit.Views
 
         private void OnRowDataContextChanged(object sender, EventArgs e)
         {
-            if (sender is not Control control)
+            if (sender is not Control { DataContext: { } ctx } control)
                 return;
 
-            if (control.DataContext is ViewModels.ChangeTreeNode node)
+            if (ctx is ViewModels.ChangeTreeNode node)
             {
                 if (node.Change is { } c)
                     UpdateRowTips(control, c);
                 else
                     ToolTip.SetTip(control, node.FullPath);
             }
-            else if (control.DataContext is Models.Change change)
+            else if (ctx is Models.Change change)
             {
                 UpdateRowTips(control, change);
             }
@@ -253,8 +310,10 @@ namespace SourceGit.Views
 
         private void OnRowDoubleTapped(object sender, TappedEventArgs e)
         {
-            var grid = sender as Grid;
-            if (grid?.DataContext is ViewModels.ChangeTreeNode node)
+            if (sender is not Control { DataContext: { } ctx })
+                return;
+
+            if (ctx is ViewModels.ChangeTreeNode node)
             {
                 if (node.IsFolder)
                 {
@@ -269,7 +328,7 @@ namespace SourceGit.Views
                     RaiseEvent(new RoutedEventArgs(ChangeDoubleTappedEvent));
                 }
             }
-            else if (grid?.DataContext is Models.Change)
+            else if (ctx is Models.Change)
             {
                 RaiseEvent(new RoutedEventArgs(ChangeDoubleTappedEvent));
             }
@@ -297,7 +356,7 @@ namespace SourceGit.Views
             var old = SelectedChanges ?? [];
             if (old.Count != selected.Count)
             {
-                SetCurrentValue(SelectedChangesProperty, selected);
+                SelectedChanges = selected;
             }
             else
             {
@@ -312,7 +371,7 @@ namespace SourceGit.Views
                 }
 
                 if (!allEquals)
-                    SetCurrentValue(SelectedChangesProperty, selected);
+                    SelectedChanges = selected;
             }
 
             _disableSelectionChangingEvent = false;
@@ -335,7 +394,7 @@ namespace SourceGit.Views
         {
             _disableSelectionChangingEvent = !onlyViewModeChange;
 
-            var changes = Changes;
+            var changes = _changes;
             if (changes == null || changes.Count == 0)
             {
                 Content = null;
@@ -343,10 +402,10 @@ namespace SourceGit.Views
                 return;
             }
 
-            var selected = SelectedChanges ?? [];
+            var selected = _selectedChanges ?? [];
             if (ViewMode == Models.ChangeViewMode.Tree)
             {
-                HashSet<string> oldFolded = new HashSet<string>();
+                var oldFolded = new HashSet<string>();
                 if (Content is ViewModels.ChangeCollectionAsTree oldTree)
                 {
                     foreach (var row in oldTree.Rows)
@@ -407,7 +466,7 @@ namespace SourceGit.Views
 
             _disableSelectionChangingEvent = true;
 
-            var selected = SelectedChanges ?? [];
+            var selected = _selectedChanges ?? [];
             if (Content is ViewModels.ChangeCollectionAsTree tree)
             {
                 tree.SelectedRows.Clear();
@@ -415,7 +474,6 @@ namespace SourceGit.Views
                 if (selected.Count > 0)
                 {
                     var sets = new HashSet<Models.Change>(selected);
-
                     var nodes = new List<ViewModels.ChangeTreeNode>();
                     foreach (var row in tree.Rows)
                     {
@@ -470,6 +528,11 @@ namespace SourceGit.Views
             ToolTip.SetTip(control, tip);
         }
 
+        private bool _isUnstagedChange = false;
+        private Models.ChangeViewMode _viewMode = Models.ChangeViewMode.Tree;
+        private bool _enableCompactFolders = false;
+        private List<Models.Change> _changes = null;
+        private List<Models.Change> _selectedChanges = null;
         private bool _disableSelectionChangingEvent = false;
     }
 }

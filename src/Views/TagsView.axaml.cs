@@ -31,13 +31,16 @@ namespace SourceGit.Views
 
     public class TagTreeNodeIcon : UserControl
     {
-        public static readonly StyledProperty<bool> IsExpandedProperty =
-            AvaloniaProperty.Register<TagTreeNodeIcon, bool>(nameof(IsExpanded));
+        public static readonly DirectProperty<TagTreeNodeIcon, bool> IsExpandedProperty =
+            AvaloniaProperty.RegisterDirect<TagTreeNodeIcon, bool>(
+                nameof(IsExpanded),
+                static o => o.IsExpanded,
+                static (o, v) => o.IsExpanded = v);
 
         public bool IsExpanded
         {
-            get => GetValue(IsExpandedProperty);
-            set => SetValue(IsExpandedProperty, value);
+            get => _isExpanded;
+            set => SetAndRaise(IsExpandedProperty, ref _isExpanded, value);
         }
 
         protected override void OnDataContextChanged(EventArgs e)
@@ -94,6 +97,8 @@ namespace SourceGit.Views
 
             Content = path;
         }
+
+        private bool _isExpanded = false;
     }
 
     public partial class TagsView : UserControl
@@ -114,6 +119,15 @@ namespace SourceGit.Views
         {
             add { AddHandler(RowsChangedEvent, value); }
             remove { RemoveHandler(RowsChangedEvent, value); }
+        }
+
+        public static readonly RoutedEvent<RoutedEventArgs> SearchRequestedEvent =
+            RoutedEvent.Register<BranchTree, RoutedEventArgs>(nameof(SearchRequested), RoutingStrategies.Tunnel | RoutingStrategies.Bubble);
+
+        public event EventHandler<RoutedEventArgs> SearchRequested
+        {
+            add { AddHandler(SearchRequestedEvent, value); }
+            remove { RemoveHandler(SearchRequestedEvent, value); }
         }
 
         public int Rows
@@ -225,9 +239,10 @@ namespace SourceGit.Views
             if (selected.Count == 1)
             {
                 var tag = selected[0];
+                var menu = new ContextMenu();
 
                 var createBranch = new MenuItem();
-                createBranch.Icon = App.CreateMenuIcon("Icons.Branch.Add");
+                createBranch.Icon = this.CreateMenuIcon("Icons.Branch.Add");
                 createBranch.Header = App.Text("CreateBranch");
                 createBranch.Click += (_, ev) =>
                 {
@@ -235,10 +250,26 @@ namespace SourceGit.Views
                         repo.ShowPopup(new ViewModels.CreateBranch(repo, tag));
                     ev.Handled = true;
                 };
+                menu.Items.Add(createBranch);
+
+                if (repo.CurrentBranch != null && !tag.SHA.Equals(repo.CurrentBranch.Head, StringComparison.Ordinal))
+                {
+                    var checkoutCommit = new MenuItem();
+                    checkoutCommit.Header = App.Text("TagCM.Checkout");
+                    checkoutCommit.Icon = this.CreateMenuIcon("Icons.Detached");
+                    checkoutCommit.Click += (_, e) =>
+                    {
+                        if (repo.CanCreatePopup())
+                            repo.ShowPopup(new ViewModels.CheckoutDetached(repo, tag));
+
+                        e.Handled = true;
+                    };
+                    menu.Items.Add(checkoutCommit);
+                }
 
                 var pushTag = new MenuItem();
                 pushTag.Header = App.Text("TagCM.Push", tag.Name);
-                pushTag.Icon = App.CreateMenuIcon("Icons.Push");
+                pushTag.Icon = this.CreateMenuIcon("Icons.Push");
                 pushTag.IsEnabled = repo.Remotes.Count > 0;
                 pushTag.Click += (_, ev) =>
                 {
@@ -246,37 +277,56 @@ namespace SourceGit.Views
                         repo.ShowPopup(new ViewModels.PushTag(repo, tag));
                     ev.Handled = true;
                 };
+                menu.Items.Add(new MenuItem() { Header = "-" });
+                menu.Items.Add(pushTag);
+
+                if (repo.CurrentBranch is { IsDetachedHead: false } current)
+                {
+                    var mergeTag = new MenuItem();
+                    mergeTag.Header = App.Text("TagCM.Merge", tag.Name, current.Name);
+                    mergeTag.Icon = this.CreateMenuIcon("Icons.Merge");
+                    mergeTag.Click += (_, ev) =>
+                    {
+                        if (repo.CanCreatePopup())
+                            repo.ShowPopup(new ViewModels.Merge(repo, tag, current.Name));
+                        ev.Handled = true;
+                    };
+                    menu.Items.Add(mergeTag);
+                }
 
                 var deleteTag = new MenuItem();
                 deleteTag.Header = App.Text("TagCM.Delete", tag.Name);
-                deleteTag.Icon = App.CreateMenuIcon("Icons.Clear");
+                deleteTag.Icon = this.CreateMenuIcon("Icons.Clear");
                 deleteTag.Click += (_, ev) =>
                 {
                     if (repo.CanCreatePopup())
                         repo.ShowPopup(new ViewModels.DeleteTag(repo, tag));
                     ev.Handled = true;
                 };
+                menu.Items.Add(deleteTag);
+                menu.Items.Add(new MenuItem() { Header = "-" });
 
                 var compareWithHead = new MenuItem();
                 compareWithHead.Header = App.Text("TagCM.CompareWithHead");
-                compareWithHead.Icon = App.CreateMenuIcon("Icons.Compare");
+                compareWithHead.Icon = this.CreateMenuIcon("Icons.Compare");
                 compareWithHead.Click += (_, _) =>
                 {
-                    App.ShowWindow(new ViewModels.Compare(repo, tag, repo.CurrentBranch));
+                    this.ShowWindow(new ViewModels.Compare(repo, tag, repo.CurrentBranch));
                 };
 
                 var compareWith = new MenuItem();
                 compareWith.Header = App.Text("TagCM.CompareWith");
-                compareWith.Icon = App.CreateMenuIcon("Icons.Compare");
+                compareWith.Icon = this.CreateMenuIcon("Icons.Compare");
                 compareWith.Click += (_, _) =>
                 {
-                    var launcher = App.GetLauncher();
-                    if (launcher != null)
-                        launcher.OpenCommandPalette(new ViewModels.CompareCommandPalette(launcher, repo, tag));
+                    new ViewModels.CompareCommandPalette(repo, tag).Open();
                 };
+                menu.Items.Add(compareWithHead);
+                menu.Items.Add(compareWith);
+                menu.Items.Add(new MenuItem() { Header = "-" });
 
                 var archive = new MenuItem();
-                archive.Icon = App.CreateMenuIcon("Icons.Archive");
+                archive.Icon = this.CreateMenuIcon("Icons.Archive");
                 archive.Header = App.Text("Archive");
                 archive.Click += (_, ev) =>
                 {
@@ -284,16 +334,6 @@ namespace SourceGit.Views
                         repo.ShowPopup(new ViewModels.Archive(repo, tag));
                     ev.Handled = true;
                 };
-
-                var menu = new ContextMenu();
-                menu.Items.Add(createBranch);
-                menu.Items.Add(new MenuItem() { Header = "-" });
-                menu.Items.Add(pushTag);
-                menu.Items.Add(deleteTag);
-                menu.Items.Add(new MenuItem() { Header = "-" });
-                menu.Items.Add(compareWithHead);
-                menu.Items.Add(compareWith);
-                menu.Items.Add(new MenuItem() { Header = "-" });
                 menu.Items.Add(archive);
                 menu.Items.Add(new MenuItem() { Header = "-" });
 
@@ -302,13 +342,13 @@ namespace SourceGit.Views
                 {
                     var custom = new MenuItem();
                     custom.Header = App.Text("TagCM.CustomAction");
-                    custom.Icon = App.CreateMenuIcon("Icons.Action");
+                    custom.Icon = this.CreateMenuIcon("Icons.Action");
 
                     foreach (var action in actions)
                     {
                         var (dup, label) = action;
                         var item = new MenuItem();
-                        item.Icon = App.CreateMenuIcon("Icons.Action");
+                        item.Icon = this.CreateMenuIcon("Icons.Action");
                         item.Header = label;
                         item.Click += async (_, ev) =>
                         {
@@ -325,24 +365,24 @@ namespace SourceGit.Views
 
                 var copy = new MenuItem();
                 copy.Header = App.Text("Copy");
-                copy.Icon = App.CreateMenuIcon("Icons.Copy");
+                copy.Icon = this.CreateMenuIcon("Icons.Copy");
 
                 var copyName = new MenuItem();
                 copyName.Header = App.Text("TagCM.Copy.Name");
-                copyName.Icon = App.CreateMenuIcon("Icons.Tag");
+                copyName.Icon = this.CreateMenuIcon("Icons.Tag");
                 copyName.Click += async (_, ev) =>
                 {
-                    await App.CopyTextAsync(tag.Name);
+                    await this.CopyTextAsync(tag.Name);
                     ev.Handled = true;
                 };
 
                 var copyMessage = new MenuItem();
                 copyMessage.Header = App.Text("TagCM.Copy.Message");
-                copyMessage.Icon = App.CreateMenuIcon("Icons.Info");
+                copyMessage.Icon = this.CreateMenuIcon("Icons.Info");
                 copyMessage.IsEnabled = !string.IsNullOrEmpty(tag.Message);
                 copyMessage.Click += async (_, ev) =>
                 {
-                    await App.CopyTextAsync(tag.Message);
+                    await this.CopyTextAsync(tag.Message);
                     ev.Handled = true;
                 };
 
@@ -353,10 +393,10 @@ namespace SourceGit.Views
                 {
                     var copyCreator = new MenuItem();
                     copyCreator.Header = App.Text("TagCM.Copy.Tagger");
-                    copyCreator.Icon = App.CreateMenuIcon("Icons.User");
+                    copyCreator.Icon = this.CreateMenuIcon("Icons.User");
                     copyCreator.Click += async (_, ev) =>
                     {
-                        await App.CopyTextAsync(tag.Creator.ToString());
+                        await this.CopyTextAsync(tag.Creator.ToString());
                         ev.Handled = true;
                     };
                     copy.Items.Add(copyCreator);
@@ -373,14 +413,14 @@ namespace SourceGit.Views
                 {
                     var compare = new MenuItem();
                     compare.Header = App.Text("TagCM.CompareTwo");
-                    compare.Icon = App.CreateMenuIcon("Icons.Compare");
+                    compare.Icon = this.CreateMenuIcon("Icons.Compare");
                     compare.Click += (_, ev) =>
                     {
                         var (based, to) = (selected[0], selected[1]);
                         if (based.CreatorDate > to.CreatorDate)
                             (based, to) = (to, based);
 
-                        App.ShowWindow(new ViewModels.Compare(repo, based, to));
+                        this.ShowWindow(new ViewModels.Compare(repo, based, to));
                         ev.Handled = true;
                     };
                     menu.Items.Add(compare);
@@ -388,7 +428,7 @@ namespace SourceGit.Views
 
                 var deleteMultiple = new MenuItem();
                 deleteMultiple.Header = App.Text("TagCM.DeleteMultiple", selected.Count);
-                deleteMultiple.Icon = App.CreateMenuIcon("Icons.Clear");
+                deleteMultiple.Icon = this.CreateMenuIcon("Icons.Clear");
                 deleteMultiple.Click += (_, ev) =>
                 {
                     if (repo.CanCreatePopup())
@@ -429,19 +469,38 @@ namespace SourceGit.Views
 
         private void OnKeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key is not (Key.Delete or Key.Back))
-                return;
+            if (e.Key == Key.F && e.KeyModifiers == (OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control))
+            {
+                RaiseEvent(new RoutedEventArgs(SearchRequestedEvent));
+                e.Handled = true;
+            }
+            else if (e.Key is (Key.Delete or Key.Back) && e.KeyModifiers == KeyModifiers.None)
+            {
+                if (DataContext is not ViewModels.Repository repo)
+                    return;
 
-            if (DataContext is not ViewModels.Repository repo)
-                return;
+                var selected = (sender as ListBox)?.SelectedItems;
+                var tags = new List<Models.Tag>();
+                foreach (var item in selected)
+                {
+                    if (item is ViewModels.TagListItem i)
+                        tags.Add(i.Tag);
+                    else if (item is ViewModels.TagTreeNode n)
+                        CollectTagsInNode(n, tags);
+                }
 
-            var selected = (sender as ListBox)?.SelectedItem;
-            if (selected is ViewModels.TagTreeNode { Tag: { } tagInNode })
-                repo.DeleteTag(tagInNode);
-            else if (selected is ViewModels.TagListItem { Tag: { } tagInItem })
-                repo.DeleteTag(tagInItem);
+                if (tags.Count == 1)
+                {
+                    repo.DeleteTag(tags[0]);
+                }
+                else if (tags.Count > 1)
+                {
+                    if (repo.CanCreatePopup())
+                        repo.ShowPopup(new ViewModels.DeleteMultipleTags(repo, tags));
+                }
 
-            e.Handled = true;
+                e.Handled = true;
+            }
         }
 
         private void CollectTagsInNode(ViewModels.TagTreeNode node, List<Models.Tag> outs)

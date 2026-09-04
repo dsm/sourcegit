@@ -2,206 +2,199 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Text;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 
-using AvaloniaEdit;
-using AvaloniaEdit.CodeCompletion;
-using AvaloniaEdit.Document;
-using AvaloniaEdit.Editing;
-using AvaloniaEdit.Rendering;
-using AvaloniaEdit.Utils;
-
 namespace SourceGit.Views
 {
-    public class CommitMessageCodeCompletionData : ICompletionData
+    public record CommitMessageTextBoxSuggestion(TextBox Target, string Text, int ReplaceStart, int ReplaceLen)
     {
-        public IImage Image
+        public void Use()
         {
-            get => null;
-        }
+            var text = Target.Text ?? string.Empty;
+            if (ReplaceStart + ReplaceLen > text.Length)
+                return;
 
-        public string Text
-        {
-            get;
-        }
+            var builder = new StringBuilder();
+            builder
+                .Append(text.Substring(0, ReplaceStart))
+                .Append(Text)
+                .Append(text.Substring(ReplaceStart + ReplaceLen));
 
-        public object Content
-        {
-            get => Text;
-        }
-
-        public object Description
-        {
-            get => null;
-        }
-
-        public double Priority
-        {
-            get => 0;
-        }
-
-        public CommitMessageCodeCompletionData(string text)
-        {
-            Text = text;
-        }
-
-        public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs)
-        {
-            textArea.Document.Replace(completionSegment, Text);
+            Target.Text = builder.ToString();
+            Target.CaretIndex = ReplaceStart + Text.Length;
         }
     }
 
-    public class CommitMessageTextEditor : TextEditor
+    public class CommitMessageTextBox : TextBox
     {
-        public static readonly StyledProperty<string> CommitMessageProperty =
-            AvaloniaProperty.Register<CommitMessageTextEditor, string>(nameof(CommitMessage), string.Empty);
-
-        public string CommitMessage
-        {
-            get => GetValue(CommitMessageProperty);
-            set => SetValue(CommitMessageProperty, value);
-        }
-
-        public static readonly StyledProperty<string> PlaceholderProperty =
-            AvaloniaProperty.Register<CommitMessageTextEditor, string>(nameof(Placeholder), string.Empty);
-
-        public string Placeholder
-        {
-            get => GetValue(PlaceholderProperty);
-            set => SetValue(PlaceholderProperty, value);
-        }
-
-        public static readonly StyledProperty<int> SubjectLengthProperty =
-            AvaloniaProperty.Register<CommitMessageTextEditor, int>(nameof(SubjectLength));
+        public static readonly DirectProperty<CommitMessageTextBox, int> SubjectLengthProperty =
+            AvaloniaProperty.RegisterDirect<CommitMessageTextBox, int>(
+                nameof(SubjectLength),
+                static o => o.SubjectLength);
 
         public int SubjectLength
         {
-            get => GetValue(SubjectLengthProperty);
-            set => SetValue(SubjectLengthProperty, value);
+            get => _subjectLen;
+            set => SetAndRaise(SubjectLengthProperty, ref _subjectLen, value);
         }
 
-        public static readonly StyledProperty<int> SubjectGuideLengthProperty =
-            AvaloniaProperty.Register<CommitMessageTextEditor, int>(nameof(SubjectGuideLength));
+        public static readonly DirectProperty<CommitMessageTextBox, int> SubjectGuideLengthProperty =
+            AvaloniaProperty.RegisterDirect<CommitMessageTextBox, int>(
+                nameof(SubjectGuideLength),
+                static o => o.SubjectGuideLength,
+                static (o, v) => o.SubjectGuideLength = v);
 
         public int SubjectGuideLength
         {
-            get => GetValue(SubjectGuideLengthProperty);
-            set => SetValue(SubjectGuideLengthProperty, value);
+            get => _subjectGuideLen;
+            set => SetAndRaise(SubjectGuideLengthProperty, ref _subjectGuideLen, value);
         }
 
-        public static readonly StyledProperty<bool> IsSubjectWarningIconVisibleProperty =
-            AvaloniaProperty.Register<CommitMessageTextEditor, bool>(nameof(IsSubjectWarningIconVisible));
+        public static readonly DirectProperty<CommitMessageTextBox, double> SubjectEndYProperty =
+            AvaloniaProperty.RegisterDirect<CommitMessageTextBox, double>(
+                nameof(SubjectEndY),
+                static o => o.SubjectEndY);
 
-        public bool IsSubjectWarningIconVisible
+        public double SubjectEndY
         {
-            get => GetValue(IsSubjectWarningIconVisibleProperty);
-            set => SetValue(IsSubjectWarningIconVisibleProperty, value);
+            get => _subjectEndY;
+            set => SetAndRaise(SubjectEndYProperty, ref _subjectEndY, value);
         }
 
-        public static readonly StyledProperty<IBrush> SubjectLineBrushProperty =
-            AvaloniaProperty.Register<CommitMessageTextEditor, IBrush>(nameof(SubjectLineBrush), Brushes.Gray);
+        public static readonly DirectProperty<CommitMessageTextBox, bool> WarnSubjectLengthProperty =
+            AvaloniaProperty.RegisterDirect<CommitMessageTextBox, bool>(
+                nameof(WarnSubjectLength),
+                static o => o.WarnSubjectLength);
 
-        public IBrush SubjectLineBrush
+        public bool WarnSubjectLength
         {
-            get => GetValue(SubjectLineBrushProperty);
-            set => SetValue(SubjectLineBrushProperty, value);
+            get => _warnSubjectLen;
+            set => SetAndRaise(WarnSubjectLengthProperty, ref _warnSubjectLen, value);
         }
 
-        protected override Type StyleKeyOverride => typeof(TextEditor);
+        public static readonly DirectProperty<CommitMessageTextBox, List<CommitMessageTextBoxSuggestion>> SuggestionsProperty =
+            AvaloniaProperty.RegisterDirect<CommitMessageTextBox, List<CommitMessageTextBoxSuggestion>>(
+                nameof(Suggestions),
+                static o => o.Suggestions);
 
-        public CommitMessageTextEditor() : base(new TextArea(), new TextDocument())
+        public List<CommitMessageTextBoxSuggestion> Suggestions
         {
-            IsReadOnly = false;
-            WordWrap = true;
-            ShowLineNumbers = false;
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
-            ClipToBounds = true;
+            get => _suggestions;
+            set => SetAndRaise(SuggestionsProperty, ref _suggestions, value);
+        }
 
-            TextArea.TextView.Margin = new Thickness(4, 2);
-            TextArea.TextView.ClipToBounds = false;
-            TextArea.TextView.Options.EnableHyperlinks = false;
-            TextArea.TextView.Options.EnableEmailHyperlinks = false;
-            TextArea.TextView.Options.AllowScrollBelowDocument = false;
+        public static readonly DirectProperty<CommitMessageTextBox, int> SelectedSuggestionIndexProperty =
+            AvaloniaProperty.RegisterDirect<CommitMessageTextBox, int>(
+                nameof(SelectedSuggestionIndex),
+                static o => o.SelectedSuggestionIndex,
+                static (o, v) => o.SelectedSuggestionIndex = v);
+
+        public int SelectedSuggestionIndex
+        {
+            get => _selectedSuggestionIdx;
+            set => SetAndRaise(SelectedSuggestionIndexProperty, ref _selectedSuggestionIdx, value);
+        }
+
+        public static readonly DirectProperty<CommitMessageTextBox, double> SuggestionPopupYProperty =
+            AvaloniaProperty.RegisterDirect<CommitMessageTextBox, double>(
+                nameof(SuggestionPopupY),
+                static o => o.SuggestionPopupY);
+
+        public double SuggestionPopupY
+        {
+            get => _suggestionPopupY;
+            set => SetAndRaise(SuggestionPopupYProperty, ref _suggestionPopupY, value);
+        }
+
+        public static readonly StyledProperty<IBrush> GuideLineBrushProperty =
+            AvaloniaProperty.Register<CommitMessageTextBox, IBrush>(nameof(GuideLineBrush), Brushes.Gray);
+
+        public IBrush GuideLineBrush
+        {
+            get => GetValue(GuideLineBrushProperty);
+            set => SetValue(GuideLineBrushProperty, value);
+        }
+
+        protected override Type StyleKeyOverride => typeof(TextBox);
+
+        public CommitMessageTextBox()
+        {
+            AcceptsReturn = true;
+            AcceptsTab = true;
+            TextWrapping = TextWrapping.Wrap;
+            HorizontalContentAlignment = HorizontalAlignment.Left;
+            VerticalContentAlignment = VerticalAlignment.Top;
+            Padding = new Thickness(4);
+
+            SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+            SetValue(ScrollViewer.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
         }
 
         public override void Render(DrawingContext context)
         {
             base.Render(context);
 
-            var w = Bounds.Width;
-            var pen = new Pen(SubjectLineBrush) { DashStyle = DashStyle.Dash };
-
-            if (SubjectLength == 0)
-            {
-                var placeholder = Placeholder;
-                if (!string.IsNullOrEmpty(placeholder))
-                {
-                    var formatted = new FormattedText(
-                        Placeholder,
-                        CultureInfo.CurrentCulture,
-                        FlowDirection.LeftToRight,
-                        new Typeface(FontFamily),
-                        FontSize,
-                        Brushes.Gray);
-
-                    context.DrawText(formatted, new Point(4, 2));
-
-                    var y = 6 + formatted.Height;
-                    context.DrawLine(pen, new Point(0, y), new Point(w, y));
-                }
-
-                return;
-            }
-
-            if (TextArea.TextView is not { VisualLinesValid: true } view)
+            var font = FontFamily ?? FontFamily.Default;
+            var pen = new Pen(GuideLineBrush) { DashStyle = DashStyle.Dash };
+            var y = SubjectEndY;
+            if (y > Bounds.Height - 0.05)
                 return;
 
-            var lines = new List<VisualLine>();
-            foreach (var line in view.VisualLines)
+            if (y >= 0.05)
             {
-                if (line.IsDisposed || line.FirstDocumentLine == null || line.FirstDocumentLine.IsDeleted)
-                    continue;
-
-                lines.Add(line);
+                var w = _scrollViewer != null ? (_scrollViewer.Viewport.Width + 10) : Bounds.Width;
+                var subjectEndTip = new FormattedText(
+                    "SUBJECT END",
+                    CultureInfo.CurrentCulture,
+                    FlowDirection.LeftToRight,
+                    new Typeface(font, FontStyle.Italic),
+                    10,
+                    Brushes.Gray);
+                context.DrawLine(pen, new Point(0, y), new Point(w, y));
+                context.DrawText(subjectEndTip, new Point(w - subjectEndTip.WidthIncludingTrailingWhitespace - 8, y + 1));
             }
 
-            if (lines.Count == 0)
+            if (y == 0 && _subjectLen == 0)
                 return;
 
-            lines.Sort((l, r) => l.StartOffset - r.StartOffset);
+            var columnTest = new FormattedText(
+                "W",
+                CultureInfo.CurrentCulture,
+                FlowDirection.LeftToRight,
+                new Typeface(font),
+                ViewModels.Preferences.Instance.DefaultFontSize,
+                Brushes.White);
+            var columnGuideX = columnTest.WidthIncludingTrailingWhitespace * 80 + 5.5;
+            context.DrawLine(pen, new Point(columnGuideX, Math.Max(0, y)), new Point(columnGuideX, Bounds.Height));
+        }
 
-            for (var i = 0; i < lines.Count; i++)
-            {
-                var line = lines[i];
-                if (line.FirstDocumentLine.LineNumber == _subjectEndLine)
-                {
-                    var y = line.GetTextLineVisualYPosition(line.TextLines[^1], VisualYPosition.LineBottom) - view.VerticalOffset + 4;
-                    context.DrawLine(pen, new Point(0, y), new Point(w, y));
-                    return;
-                }
-            }
+        protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
+        {
+            base.OnApplyTemplate(e);
+
+            _textPresenter = e.NameScope.Get<TextPresenter>("PART_TextPresenter");
+            _scrollViewer = e.NameScope.Find<ScrollViewer>("PART_ScrollViewer");
         }
 
         protected override void OnLoaded(RoutedEventArgs e)
         {
             base.OnLoaded(e);
-
-            TextArea.TextView.VisualLinesChanged += OnTextViewVisualLinesChanged;
-            TextArea.TextView.ContextRequested += OnTextViewContextRequested;
+            LayoutUpdated += OnLayoutUpdated;
+            OnLayoutUpdated(null, null);
         }
 
         protected override void OnUnloaded(RoutedEventArgs e)
         {
-            TextArea.TextView.ContextRequested -= OnTextViewContextRequested;
-            TextArea.TextView.VisualLinesChanged -= OnTextViewVisualLinesChanged;
-
+            LayoutUpdated -= OnLayoutUpdated;
             base.OnUnloaded(e);
         }
 
@@ -209,180 +202,281 @@ namespace SourceGit.Views
         {
             base.OnPropertyChanged(change);
 
-            if (change.Property == CommitMessageProperty)
+            if (change.Property == TextProperty)
             {
-                if (!_isEditing)
-                    Text = CommitMessage;
-
-                var lines = CommitMessage.ReplaceLineEndings("\n").Split('\n');
-                var subjectLen = 0;
-                var foundSubjectEnd = false;
-
-                for (var i = 0; i < lines.Length; i++)
+                var text = Text ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(text))
                 {
-                    var line = lines[i];
-                    if (string.IsNullOrWhiteSpace(line))
+                    _subjectEndCharIdx = -1;
+                    SubjectLength = 0;
+                    return;
+                }
+
+                var subjectLen = 0;
+                var lastNonLineBreakCharIdx = 0;
+                var lastLineStart = 0;
+                for (var i = 0; i < text.Length; i++)
+                {
+                    var ch = text[i];
+                    if (ch == '\n')
                     {
-                        if (subjectLen == 0)
+                        var line = (i > lastLineStart) ? text.Substring(lastLineStart, i - lastLineStart) : string.Empty;
+                        lastLineStart = i + 1;
+
+                        if (string.IsNullOrWhiteSpace(line))
+                        {
+                            if (subjectLen > 0)
+                                break;
+
                             continue;
+                        }
 
-                        _subjectEndLine = i;
-                        foundSubjectEnd = true;
-                        break;
+                        var validCharLen = line.TrimEnd().Length;
+                        if (subjectLen > 0)
+                            subjectLen += (validCharLen + 1);
+                        else
+                            subjectLen = validCharLen;
                     }
+                    else if (ch != '\r')
+                    {
+                        lastNonLineBreakCharIdx = i;
+                    }
+                }
 
-                    var validCharLen = line.TrimEnd().Length;
+                if (lastLineStart <= lastNonLineBreakCharIdx)
+                {
+                    var validCharLen = text.Substring(lastLineStart).TrimEnd().Length;
                     if (subjectLen > 0)
                         subjectLen += (validCharLen + 1);
                     else
                         subjectLen = validCharLen;
                 }
 
-                if (!foundSubjectEnd)
-                    _subjectEndLine = lines.Length;
+                SubjectLength = subjectLen;
+                _subjectEndCharIdx = lastNonLineBreakCharIdx;
+            }
+            else if (change.Property == SubjectLengthProperty || change.Property == SubjectGuideLengthProperty)
+            {
+                WarnSubjectLength = _subjectLen > _subjectGuideLen;
+            }
+            else if (change.Property == SubjectEndYProperty)
+            {
+                InvalidateVisual();
+            }
+            else if (change.Property == CaretIndexProperty)
+            {
+                var text = Text ?? string.Empty;
+                if (string.IsNullOrEmpty(text))
+                {
+                    _suggestionMatchStartIdx = -1;
+                    Suggestions = null;
+                    return;
+                }
 
-                SetCurrentValue(SubjectLengthProperty, subjectLen);
-            }
-            else if (change.Property == PlaceholderProperty && IsLoaded)
-            {
-                if (string.IsNullOrWhiteSpace(CommitMessage))
-                    InvalidateVisual();
-            }
-            else if (change.Property == SubjectLengthProperty ||
-                     change.Property == SubjectGuideLengthProperty)
-            {
-                SetCurrentValue(IsSubjectWarningIconVisibleProperty, SubjectLength > SubjectGuideLength);
+                var caretIdx = CaretIndex;
+                var startIdx = Math.Max(Math.Min(text.Length - 1, caretIdx - 1), 0);
+                var hasWhitespace = false;
+                var column = 0;
+                for (var i = startIdx; i >= 0; i--)
+                {
+                    if (i == 0)
+                    {
+                        column = startIdx + 2;
+                        break;
+                    }
+
+                    var ch = text[i];
+                    if (ch == '\n')
+                    {
+                        column = startIdx - i + 1;
+                        break;
+                    }
+
+                    if (!hasWhitespace)
+                        hasWhitespace = char.IsWhiteSpace(ch);
+                }
+
+                var suggestionMatchStartIdx = Math.Max(caretIdx - column + 1, 0);
+                if (hasWhitespace || column == 1 || suggestionMatchStartIdx < _subjectEndCharIdx)
+                {
+                    _suggestionMatchStartIdx = -1;
+                    Suggestions = null;
+                    return;
+                }
+
+                var editLine = text.Substring(suggestionMatchStartIdx);
+                var prefixEndIdx = editLine.IndexOfAny([' ', '\t', '\r', '\n']);
+                var prefix = prefixEndIdx > 0 ? editLine.Substring(0, prefixEndIdx) : editLine;
+                var matches = new List<CommitMessageTextBoxSuggestion>();
+                if (prefix.Length >= 2)
+                {
+                    foreach (var t in _trailers)
+                    {
+                        if (t.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+                            !editLine.StartsWith(t, StringComparison.Ordinal))
+                            matches.Add(new(this, t, suggestionMatchStartIdx, prefix.Length));
+                    }
+                }
+
+                if (matches.Count > 0)
+                {
+                    _suggestionMatchStartIdx = suggestionMatchStartIdx;
+                    Suggestions = matches;
+                    SelectedSuggestionIndex = 0;
+                }
+                else
+                {
+                    _suggestionMatchStartIdx = -1;
+                    Suggestions = null;
+                }
             }
         }
 
-        protected override void OnTextChanged(EventArgs e)
+        protected override void OnLostFocus(RoutedEventArgs e)
         {
-            base.OnTextChanged(e);
+            base.OnLostFocus(e);
+            Suggestions = null;
+        }
 
-            if (!IsLoaded)
-                return;
-
-            _isEditing = true;
-            SetCurrentValue(CommitMessageProperty, Text);
-            _isEditing = false;
-
-            var caretOffset = CaretOffset;
-            var start = caretOffset;
-            for (; start > 0; start--)
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            if (_suggestions != null)
             {
-                var ch = Text[start - 1];
-                if (ch == '\n')
-                    break;
-
-                if (!char.IsAscii(ch))
-                    return;
-            }
-
-            if (caretOffset < start + 2)
-            {
-                _completionWnd?.Close();
-                return;
-            }
-
-            var word = Text.Substring(start, caretOffset - start);
-            var matches = new List<CommitMessageCodeCompletionData>();
-            foreach (var keyword in _keywords)
-            {
-                if (keyword.StartsWith(word, StringComparison.OrdinalIgnoreCase) && keyword.Length != word.Length)
-                    matches.Add(new(keyword));
-            }
-
-            if (matches.Count > 0)
-            {
-                if (_completionWnd == null)
+                if (e.Key == Key.Up)
                 {
-                    _completionWnd = new CompletionWindow(TextArea);
-                    _completionWnd.Closed += (_, __) => _completionWnd = null;
-                    _completionWnd.Show();
-                }
+                    if (_selectedSuggestionIdx > 0)
+                        SelectedSuggestionIndex = _selectedSuggestionIdx - 1;
+                    else
+                        SelectedSuggestionIndex = _suggestions.Count - 1;
 
-                _completionWnd.CompletionList.CompletionData.Clear();
-                _completionWnd.CompletionList.CompletionData.AddRange(matches);
-                _completionWnd.StartOffset = start;
-                _completionWnd.EndOffset = caretOffset;
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Down)
+                {
+                    if (_selectedSuggestionIdx < _suggestions.Count - 1)
+                        SelectedSuggestionIndex = _selectedSuggestionIdx + 1;
+                    else
+                        SelectedSuggestionIndex = 0;
+
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Enter || e.Key == Key.Tab)
+                {
+                    var selected = _suggestions[_selectedSuggestionIdx];
+                    selected.Use();
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Escape)
+                {
+                    Suggestions = null;
+                    e.Handled = true;
+                }
+            }
+
+            if (!e.Handled)
+                base.OnKeyDown(e);
+        }
+
+        private void OnLayoutUpdated(object sender, EventArgs e)
+        {
+            if (_textPresenter == null)
+            {
+                SubjectEndY = 0;
+                SuggestionPopupY = 0;
+                Suggestions = null;
+                return;
+            }
+
+            var requiredWidth = _scrollViewer?.Viewport.Width ?? (Bounds.Width - 10);
+            if (Math.Abs(_textPresenter.Bounds.Width - requiredWidth) >= 0.01)
+            {
+                _textPresenter.Width = requiredWidth;
+                return;
+            }
+
+            if (_subjectEndCharIdx < 0)
+            {
+                SubjectEndY = 0;
             }
             else
             {
-                _completionWnd?.Close();
+                var y = _textPresenter.TextLayout.HitTestTextPosition(_subjectEndCharIdx).Bottom;
+                var offset = _scrollViewer?.Offset.Y ?? 0;
+                SubjectEndY = y - offset + 6;
+
+                if (_suggestionMatchStartIdx >= 0)
+                {
+                    var popupY = _textPresenter.TextLayout.HitTestTextPosition(_suggestionMatchStartIdx).Bottom;
+                    y = popupY - offset;
+                    if (y < 0.05 || y > Bounds.Height - 0.05)
+                    {
+                        _suggestionMatchStartIdx = -1;
+                        SuggestionPopupY = 0;
+                        Suggestions = null;
+                    }
+                    else
+                    {
+                        SuggestionPopupY = y;
+                    }
+                }
             }
         }
 
-        private void OnTextViewContextRequested(object sender, ContextRequestedEventArgs e)
-        {
-            var selection = TextArea.Selection;
-            var hasSelected = selection is { IsEmpty: false };
+        private readonly List<string> _trailers =
+        [
+            "Acked-by: ",
+            "Assisted-by: ",
+            "BREAKING CHANGE: ",
+            "Co-authored-by: ",
+            "Fixes: ",
+            "Helped-by: ",
+            "Issue: ",
+            "Milestone: ",
+            "on-behalf-of: @",
+            "Reference-to: ",
+            "Refs: ",
+            "Reviewed-by: ",
+            "See-also: ",
+            "Signed-off-by: ",
+        ];
 
-            var copy = new MenuItem();
-            copy.Header = App.Text("Copy");
-            copy.Icon = App.CreateMenuIcon("Icons.Copy");
-            copy.IsEnabled = hasSelected;
-            copy.Click += (_, ev) =>
-            {
-                Copy();
-                ev.Handled = true;
-            };
-
-            var cut = new MenuItem();
-            cut.Header = App.Text("Cut");
-            cut.Icon = App.CreateMenuIcon("Icons.Cut");
-            cut.IsEnabled = hasSelected;
-            cut.Click += (_, ev) =>
-            {
-                Cut();
-                ev.Handled = true;
-            };
-
-            var paste = new MenuItem();
-            paste.Header = App.Text("Paste");
-            paste.Icon = App.CreateMenuIcon("Icons.Paste");
-            paste.Click += (_, ev) =>
-            {
-                Paste();
-                ev.Handled = true;
-            };
-
-            var menu = new ContextMenu();
-            menu.Items.Add(copy);
-            menu.Items.Add(cut);
-            menu.Items.Add(paste);
-            menu.Open(TextArea.TextView);
-            e.Handled = true;
-        }
-
-        private void OnTextViewVisualLinesChanged(object sender, EventArgs e)
-        {
-            InvalidateVisual();
-        }
-
-        private readonly List<string> _keywords = ["Acked-by: ", "Co-authored-by: ", "Reviewed-by: ", "Signed-off-by: ", "on-behalf-of: @", "BREAKING CHANGE: ", "Refs: "];
-        private bool _isEditing = false;
-        private int _subjectEndLine = 0;
-        private CompletionWindow _completionWnd = null;
+        private TextPresenter _textPresenter = null;
+        private ScrollViewer _scrollViewer = null;
+        private int _subjectLen = 0;
+        private int _subjectGuideLen = 0;
+        private int _subjectEndCharIdx = -1;
+        private double _subjectEndY = 0;
+        private bool _warnSubjectLen = false;
+        private int _suggestionMatchStartIdx = -1;
+        private List<CommitMessageTextBoxSuggestion> _suggestions = null;
+        private int _selectedSuggestionIdx = 0;
+        private double _suggestionPopupY = 0;
     }
 
     public partial class CommitMessageToolBox : UserControl
     {
-        public static readonly StyledProperty<bool> ShowAdvancedOptionsProperty =
-            AvaloniaProperty.Register<CommitMessageToolBox, bool>(nameof(ShowAdvancedOptions));
+        public static readonly DirectProperty<CommitMessageToolBox, bool> ShowAdvancedOptionsProperty =
+            AvaloniaProperty.RegisterDirect<CommitMessageToolBox, bool>(
+                nameof(ShowAdvancedOptions),
+                static o => o.ShowAdvancedOptions,
+                static (o, v) => o.ShowAdvancedOptions = v);
 
         public bool ShowAdvancedOptions
         {
-            get => GetValue(ShowAdvancedOptionsProperty);
-            set => SetValue(ShowAdvancedOptionsProperty, value);
+            get => _showAdvancedOptions;
+            set => SetAndRaise(ShowAdvancedOptionsProperty, ref _showAdvancedOptions, value);
         }
 
-        public static readonly StyledProperty<string> CommitMessageProperty =
-            AvaloniaProperty.Register<CommitMessageToolBox, string>(nameof(CommitMessage), string.Empty);
+        public static readonly DirectProperty<CommitMessageToolBox, string> CommitMessageProperty =
+            AvaloniaProperty.RegisterDirect<CommitMessageToolBox, string>(
+                nameof(CommitMessage),
+                static o => o.CommitMessage,
+                static (o, v) => o.CommitMessage = v);
 
         public string CommitMessage
         {
-            get => GetValue(CommitMessageProperty);
-            set => SetValue(CommitMessageProperty, value);
+            get => _commitMessage;
+            set => SetAndRaise(CommitMessageProperty, ref _commitMessage, value);
         }
 
         public CommitMessageToolBox()
@@ -390,15 +484,21 @@ namespace SourceGit.Views
             InitializeComponent();
         }
 
+        private void OnSuggestionTapped(object sender, TappedEventArgs e)
+        {
+            if (sender is Control { DataContext: CommitMessageTextBoxSuggestion suggestion })
+                suggestion.Use();
+
+            e.Handled = true;
+        }
+
         private async void OnOpenCommitMessagePicker(object sender, RoutedEventArgs e)
         {
-            if (sender is Button button && DataContext is ViewModels.WorkingCopy vm && ShowAdvancedOptions)
+            if (sender is Button button && DataContext is ViewModels.WorkingCopy vm && _showAdvancedOptions)
             {
                 var repo = vm.Repository;
                 var foreground = this.FindResource("Brush.FG1") as IBrush;
-
-                var menu = new ContextMenu();
-                menu.MaxWidth = 480;
+                var menu = new ContextMenu() { MaxWidth = 480 };
 
                 var gitTemplate = await new Commands.Config(repo.FullPath).GetAsync("commit.template");
                 var templateCount = repo.Settings.CommitTemplates.Count;
@@ -407,7 +507,7 @@ namespace SourceGit.Views
                     menu.Items.Add(new MenuItem()
                     {
                         Header = App.Text("WorkingCopy.NoCommitTemplates"),
-                        Icon = App.CreateMenuIcon("Icons.Code"),
+                        Icon = this.CreateMenuIcon("Icons.Code"),
                         IsEnabled = false
                     });
                 }
@@ -415,7 +515,7 @@ namespace SourceGit.Views
                 {
                     for (int i = 0; i < templateCount; i++)
                     {
-                        var icon = App.CreateMenuIcon("Icons.Code");
+                        var icon = this.CreateMenuIcon("Icons.Code");
                         icon.Fill = foreground;
 
                         var template = repo.Settings.CommitTemplates[i];
@@ -444,7 +544,7 @@ namespace SourceGit.Views
                                 friendlyName = $"~{gitTemplate.AsSpan(prefixLen)}";
                         }
 
-                        var icon = App.CreateMenuIcon("Icons.Code");
+                        var icon = this.CreateMenuIcon("Icons.Code");
                         icon.Fill = foreground;
 
                         var gitTemplateItem = new MenuItem();
@@ -462,13 +562,13 @@ namespace SourceGit.Views
 
                 menu.Items.Add(new MenuItem() { Header = "-" });
 
-                var historiesCount = repo.Settings.CommitMessages.Count;
+                var historiesCount = repo.UIStates.RecentCommitMessages.Count;
                 if (historiesCount == 0)
                 {
                     menu.Items.Add(new MenuItem()
                     {
                         Header = App.Text("WorkingCopy.NoCommitHistories"),
-                        Icon = App.CreateMenuIcon("Icons.Histories"),
+                        Icon = this.CreateMenuIcon("Icons.Histories"),
                         IsEnabled = false
                     });
                 }
@@ -476,7 +576,7 @@ namespace SourceGit.Views
                 {
                     for (int i = 0; i < historiesCount; i++)
                     {
-                        var dup = repo.Settings.CommitMessages[i].Trim();
+                        var dup = repo.UIStates.RecentCommitMessages[i].Trim();
                         var header = new TextBlock()
                         {
                             Text = dup.ReplaceLineEndings(" "),
@@ -484,7 +584,7 @@ namespace SourceGit.Views
                             TextTrimming = TextTrimming.CharacterEllipsis
                         };
 
-                        var icon = App.CreateMenuIcon("Icons.Histories");
+                        var icon = this.CreateMenuIcon("Icons.Histories");
                         icon.Fill = foreground;
 
                         var item = new MenuItem();
@@ -501,7 +601,7 @@ namespace SourceGit.Views
 
                     menu.Items.Add(new MenuItem() { Header = "-" });
 
-                    var clearIcon = App.CreateMenuIcon("Icons.Clear");
+                    var clearIcon = this.CreateMenuIcon("Icons.Clear");
                     clearIcon.Fill = foreground;
 
                     var clearHistoryItem = new MenuItem();
@@ -518,6 +618,8 @@ namespace SourceGit.Views
 
                 button.IsEnabled = false;
                 menu.Placement = PlacementMode.TopEdgeAlignedLeft;
+                menu.HorizontalOffset = -2;
+                menu.VerticalOffset = 1;
                 menu.Closed += (_, _) => button.IsEnabled = true;
                 menu.Open(button);
             }
@@ -525,28 +627,31 @@ namespace SourceGit.Views
             e.Handled = true;
         }
 
-        private async void OnOpenOpenAIHelper(object sender, RoutedEventArgs e)
+        private void OnOpenOpenAIHelper(object sender, RoutedEventArgs e)
         {
-            if (DataContext is ViewModels.WorkingCopy vm && sender is Button button && ShowAdvancedOptions)
+            if (DataContext is ViewModels.WorkingCopy vm && sender is Button button && _showAdvancedOptions)
             {
                 var repo = vm.Repository;
 
                 if (vm.Staged == null || vm.Staged.Count == 0)
                 {
-                    App.RaiseException(repo.FullPath, "No files added to commit!");
+                    repo.SendNotification("No files added to commit!", true);
+                    e.Handled = true;
                     return;
                 }
 
                 var services = repo.GetPreferredOpenAIServices();
                 if (services.Count == 0)
                 {
-                    App.RaiseException(repo.FullPath, "Bad configuration for OpenAI");
+                    repo.SendNotification("Bad configuration for OpenAI", true);
+                    e.Handled = true;
                     return;
                 }
 
                 if (services.Count == 1)
                 {
-                    await App.ShowDialog(new ViewModels.AIAssistant(repo, services[0], vm.Staged));
+                    DoOpenAIAssistant(repo, services[0], vm.Staged);
+                    e.Handled = true;
                     return;
                 }
 
@@ -556,9 +661,9 @@ namespace SourceGit.Views
                     var dup = service;
                     var item = new MenuItem();
                     item.Header = service.Name;
-                    item.Click += async (_, ev) =>
+                    item.Click += (_, ev) =>
                     {
-                        await App.ShowDialog(new ViewModels.AIAssistant(repo, dup, vm.Staged));
+                        DoOpenAIAssistant(repo, dup, vm.Staged);
                         ev.Handled = true;
                     };
 
@@ -594,5 +699,19 @@ namespace SourceGit.Views
 
             e.Handled = true;
         }
+
+        private void DoOpenAIAssistant(ViewModels.Repository repo, AI.Service service, List<Models.Change> changes)
+        {
+            var owner = TopLevel.GetTopLevel(this) as Window;
+            if (owner == null)
+                return;
+
+            var assistant = new ViewModels.AIAssistant(repo, service, changes);
+            var view = new AIAssistant() { DataContext = assistant };
+            view.Show(owner);
+        }
+
+        private string _commitMessage = string.Empty;
+        private bool _showAdvancedOptions = false;
     }
 }

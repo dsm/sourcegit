@@ -98,6 +98,23 @@ namespace SourceGit.Views
                 }
             }
 
+            protected override Size MeasureOverride(Size availableSize)
+            {
+                if (DataContext is not ViewModels.TextDiffContext ctx)
+                    return new Size(0, 0);
+
+                var typeface = new Typeface(TextArea.FontFamily);
+                var test = new FormattedText(
+                    $"{ctx.Data.MaxLineNumber}",
+                    CultureInfo.CurrentCulture,
+                    FlowDirection.LeftToRight,
+                    typeface,
+                    TextArea.FontSize,
+                    Brushes.White);
+
+                return new Size(test.Width, 0);
+            }
+
             private readonly bool _usePresenter;
             private readonly bool _isOld;
         }
@@ -203,6 +220,10 @@ namespace SourceGit.Views
 
                 var lines = _presenter.GetLines();
                 var width = textView.Bounds.Width;
+                var pixelHeight = PixelSnapHelpers.GetPixelSize(textView).Height;
+                var typeface = textView.CreateTypeface();
+                var lineEndingBrush = new SolidColorBrush(Colors.Gray, 0.8);
+
                 foreach (var line in textView.VisualLines)
                 {
                     if (line.IsDisposed || line.FirstDocumentLine == null || line.FirstDocumentLine.IsDeleted)
@@ -214,8 +235,9 @@ namespace SourceGit.Views
 
                     var info = lines[index - 1];
 
+                    var lastTextLine = line.TextLines[^1];
                     var startY = line.GetTextLineVisualYPosition(line.TextLines[0], VisualYPosition.LineTop) - textView.VerticalOffset;
-                    var endY = line.GetTextLineVisualYPosition(line.TextLines[^1], VisualYPosition.LineBottom) - textView.VerticalOffset;
+                    var endY = line.GetTextLineVisualYPosition(lastTextLine, VisualYPosition.LineBottom) - textView.VerticalOffset;
 
                     var bg = GetBrushByLineType(info.Type);
                     if (bg != null)
@@ -261,14 +283,47 @@ namespace SourceGit.Views
                         }
                     }
 
+                    if (info.NoNewLineEndOfFile)
+                    {
+                        var radius = Math.Min(6, (lastTextLine.Height - 4) * 0.5);
+                        var pen = new Pen(Brushes.Red, 1.5);
+                        var indicatorX = lastTextLine.WidthIncludingTrailingWhitespace - textView.HorizontalOffset + radius + 4;
+                        var indicatorY = line.GetTextLineVisualYPosition(lastTextLine, VisualYPosition.TextMiddle) - textView.VerticalOffset + 0.5;
+                        drawingContext.DrawEllipse(null, pen, new Point(indicatorX, indicatorY), radius, radius);
+                        drawingContext.DrawLine(pen, new Point(indicatorX - radius + 3, indicatorY), new Point(indicatorX + radius - 3, indicatorY));
+                    }
+                    else if (_presenter.ShowHiddenSymbols &&
+                        (info.Type == Models.TextDiffLineType.Normal ||
+                        info.Type == Models.TextDiffLineType.Added ||
+                        info.Type == Models.TextDiffLineType.Deleted))
+                    {
+                        var indicatorX = lastTextLine.WidthIncludingTrailingWhitespace - textView.HorizontalOffset + 2;
+                        var indicatorY = line.GetTextLineVisualYPosition(lastTextLine, VisualYPosition.TextMiddle) - textView.VerticalOffset;
+                        var lineEnding = info.RawContent.Length != 0 && info.RawContent[^1] == '\r' ? "\\r\\n" : "\\n";
+                        var indicator = new FormattedText(
+                            lineEnding,
+                            CultureInfo.CurrentCulture,
+                            FlowDirection.LeftToRight,
+                            typeface,
+                            _presenter.FontSize,
+                            lineEndingBrush);
+                        drawingContext.DrawText(indicator, new Point(indicatorX, indicatorY - (indicator.Height * 0.5)));
+                    }
+
                     if (changeBlock == null)
                         continue;
 
                     if (index == changeBlock.Start)
-                        drawingContext.DrawLine(changeBlockBorder, new Point(0, startY), new Point(width, startY));
+                    {
+                        var alignedY = PixelSnapHelpers.PixelAlign(startY, pixelHeight);
+                        drawingContext.DrawLine(changeBlockBorder, new Point(0, alignedY), new Point(width, alignedY));
+                    }
 
                     if (index == changeBlock.End)
-                        drawingContext.DrawLine(changeBlockBorder, new Point(0, endY), new Point(width, endY));
+                    {
+                        var alignedY = PixelSnapHelpers.PixelAlign(endY, pixelHeight);
+                        drawingContext.DrawLine(changeBlockBorder, new Point(0, alignedY), new Point(width, alignedY));
+                    }
                 }
             }
 
@@ -307,22 +362,52 @@ namespace SourceGit.Views
             }
         }
 
-        public static readonly StyledProperty<string> FileNameProperty =
-            AvaloniaProperty.Register<ThemedTextDiffPresenter, string>(nameof(FileName), string.Empty);
+        public static readonly DirectProperty<ThemedTextDiffPresenter, string> FileNameProperty =
+            AvaloniaProperty.RegisterDirect<ThemedTextDiffPresenter, string>(
+                nameof(FileName),
+                static o => o.FileName,
+                static (o, v) => o.FileName = v);
 
         public string FileName
         {
-            get => GetValue(FileNameProperty);
-            set => SetValue(FileNameProperty, value);
+            get => _fileName;
+            set => SetAndRaise(FileNameProperty, ref _fileName, value);
         }
 
-        public static readonly StyledProperty<bool> IsOldProperty =
-            AvaloniaProperty.Register<ThemedTextDiffPresenter, bool>(nameof(IsOld));
+        public static readonly DirectProperty<ThemedTextDiffPresenter, bool> IsOldProperty =
+            AvaloniaProperty.RegisterDirect<ThemedTextDiffPresenter, bool>(
+                nameof(IsOld),
+                static o => o.IsOld,
+                static (o, v) => o.IsOld = v);
 
         public bool IsOld
         {
-            get => GetValue(IsOldProperty);
-            set => SetValue(IsOldProperty, value);
+            get => _isOld;
+            set => SetAndRaise(IsOldProperty, ref _isOld, value);
+        }
+
+        public static readonly DirectProperty<ThemedTextDiffPresenter, ViewModels.TextDiffSelectedChunk> SelectedChunkProperty =
+            AvaloniaProperty.RegisterDirect<ThemedTextDiffPresenter, ViewModels.TextDiffSelectedChunk>(
+                nameof(SelectedChunk),
+                static o => o.SelectedChunk,
+                static (o, v) => o.SelectedChunk = v);
+
+        public ViewModels.TextDiffSelectedChunk SelectedChunk
+        {
+            get => _selectedChunk;
+            set => SetAndRaise(SelectedChunkProperty, ref _selectedChunk, value);
+        }
+
+        public static readonly DirectProperty<ThemedTextDiffPresenter, ViewModels.BlockNavigation> BlockNavigationProperty =
+            AvaloniaProperty.RegisterDirect<ThemedTextDiffPresenter, ViewModels.BlockNavigation>(
+                nameof(BlockNavigation),
+                static o => o.BlockNavigation,
+                static (o, v) => o.BlockNavigation = v);
+
+        public ViewModels.BlockNavigation BlockNavigation
+        {
+            get => _blockNavigation;
+            set => SetAndRaise(BlockNavigationProperty, ref _blockNavigation, value);
         }
 
         public static readonly StyledProperty<IBrush> LineBrushProperty =
@@ -424,24 +509,6 @@ namespace SourceGit.Views
             set => SetValue(TabWidthProperty, value);
         }
 
-        public static readonly StyledProperty<ViewModels.TextDiffSelectedChunk> SelectedChunkProperty =
-            AvaloniaProperty.Register<ThemedTextDiffPresenter, ViewModels.TextDiffSelectedChunk>(nameof(SelectedChunk));
-
-        public ViewModels.TextDiffSelectedChunk SelectedChunk
-        {
-            get => GetValue(SelectedChunkProperty);
-            set => SetValue(SelectedChunkProperty, value);
-        }
-
-        public static readonly StyledProperty<ViewModels.BlockNavigation> BlockNavigationProperty =
-            AvaloniaProperty.Register<ThemedTextDiffPresenter, ViewModels.BlockNavigation>(nameof(BlockNavigation));
-
-        public ViewModels.BlockNavigation BlockNavigation
-        {
-            get => GetValue(BlockNavigationProperty);
-            set => SetValue(BlockNavigationProperty, value);
-        }
-
         protected override Type StyleKeyOverride => typeof(TextEditor);
 
         public ThemedTextDiffPresenter(TextArea area, TextDocument doc) : base(area, doc)
@@ -484,14 +551,17 @@ namespace SourceGit.Views
             if (chunk == null || (!chunk.Combined && chunk.IsOldSide != IsOld))
                 return;
 
+            var extentHeight = ExtentHeight;
+            var width = extentHeight > Bounds.Height ? Bounds.Width - 12 : Bounds.Width;
             var color = (Color)this.FindResource("SystemAccentColor")!;
             var brush = new SolidColorBrush(color, 0.1);
             var pen = new Pen(color.ToUInt32());
-            var rect = new Rect(0, chunk.Y, Bounds.Width, chunk.Height);
+            var rect = new Rect(0, chunk.Y, width, chunk.Height);
+            var aligned = PixelSnapHelpers.PixelAlign(rect, PixelSnapHelpers.GetPixelSize(this));
 
-            context.DrawRectangle(brush, null, rect);
-            context.DrawLine(pen, rect.TopLeft, rect.TopRight);
-            context.DrawLine(pen, rect.BottomLeft, rect.BottomRight);
+            context.DrawRectangle(brush, null, aligned);
+            context.DrawLine(pen, aligned.TopLeft, aligned.TopRight);
+            context.DrawLine(pen, aligned.BottomLeft, aligned.BottomRight);
         }
 
         protected override void OnLoaded(RoutedEventArgs e)
@@ -570,29 +640,6 @@ namespace SourceGit.Views
         protected override void OnDataContextChanged(EventArgs e)
         {
             base.OnDataContextChanged(e);
-
-            if (DataContext is ViewModels.TextDiffContext ctx)
-            {
-                var typeface = new Typeface(FontFamily);
-                var test = new FormattedText(
-                    $"{ctx.Data.MaxLineNumber}",
-                    CultureInfo.CurrentCulture,
-                    FlowDirection.LeftToRight,
-                    typeface,
-                    FontSize,
-                    Brushes.White);
-
-                var width = test.WidthIncludingTrailingWhitespace;
-                foreach (var margin in TextArea.LeftMargins)
-                {
-                    if (margin is LineNumberMargin lineNumberMargin)
-                        margin.Width = width;
-                }
-
-                var dock = TextArea.FindDescendantOfType<DockPanel>();
-                dock?.InvalidateArrange();
-            }
-
             AutoScrollToFirstChange();
         }
 
@@ -615,10 +662,12 @@ namespace SourceGit.Views
         {
             if (e.KeyModifiers.Equals(OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control))
             {
-                if (e.Key == Key.C)
+                if (e.Key is Key.C or Key.Insert)
                 {
-                    await CopyWithoutIndicatorsAsync();
                     e.Handled = true;
+
+                    if (CanCopyText())
+                        await CopyWithoutIndicatorsAsync();
                 }
             }
 
@@ -633,21 +682,30 @@ namespace SourceGit.Views
 
         private void OnTextViewContextRequested(object sender, ContextRequestedEventArgs e)
         {
-            var selection = TextArea.Selection;
-            if (selection.IsEmpty)
+            if (!CanCopyText())
                 return;
 
             var copy = new MenuItem();
             copy.Header = App.Text("Copy");
-            copy.Icon = App.CreateMenuIcon("Icons.Copy");
+            copy.Icon = this.CreateMenuIcon("Icons.Copy");
             copy.Click += async (_, ev) =>
             {
                 await CopyWithoutIndicatorsAsync();
                 ev.Handled = true;
             };
 
+            var copyAsPatch = new MenuItem();
+            copyAsPatch.Header = App.Text("CopyAsPatch");
+            copyAsPatch.Icon = this.CreateMenuIcon("Icons.Copy");
+            copyAsPatch.Click += async (_, ev) =>
+            {
+                await CopyAsPatchAsync();
+                ev.Handled = true;
+            };
+
             var menu = new ContextMenu();
             menu.Items.Add(copy);
+            menu.Items.Add(copyAsPatch);
             menu.Open(TextArea.TextView);
 
             e.Handled = true;
@@ -655,7 +713,7 @@ namespace SourceGit.Views
 
         private void OnTextViewPointerChanged(object sender, PointerEventArgs e)
         {
-            if (DataContext is not ViewModels.TextDiffContext { Option: { WorkingCopyChange: { } } })
+            if (DataContext is not ViewModels.TextDiffContext { Option: { IsLocalChange: true } })
                 return;
 
             if (sender is not TextView view)
@@ -698,7 +756,7 @@ namespace SourceGit.Views
 
         private void OnTextViewPointerWheelChanged(object sender, PointerWheelEventArgs e)
         {
-            if (DataContext is not ViewModels.TextDiffContext { Option: { WorkingCopyChange: { } } })
+            if (DataContext is not ViewModels.TextDiffContext { Option: { IsLocalChange: true } })
                 return;
 
             if (sender is not TextView view)
@@ -712,6 +770,9 @@ namespace SourceGit.Views
         {
             if (DataContext is not ViewModels.TextDiffContext ctx)
                 return;
+
+            foreach (var margin in TextArea.LeftMargins)
+                margin.InvalidateMeasure();
 
             if (ctx.IsSideBySide() && !IsOld)
                 return;
@@ -745,7 +806,7 @@ namespace SourceGit.Views
         protected void TrySetChunk(ViewModels.TextDiffSelectedChunk chunk)
         {
             if (ViewModels.TextDiffSelectedChunk.IsChanged(SelectedChunk, chunk))
-                SetCurrentValue(SelectedChunkProperty, chunk);
+                SelectedChunk = chunk;
         }
 
         private List<Models.TextDiffLine> GetLines()
@@ -810,17 +871,31 @@ namespace SourceGit.Views
             }
         }
 
-        private async Task CopyWithoutIndicatorsAsync()
+        private bool CanCopyText()
         {
             var selection = TextArea.Selection;
             if (selection.IsEmpty)
+                return false;
+
+            var startPosition = selection.StartPosition;
+            var endPosition = selection.EndPosition;
+            if (startPosition.Line == endPosition.Line)
             {
-                await App.CopyTextAsync(string.Empty);
-                return;
+                var lines = GetLines();
+                var idx = startPosition.Line - 1;
+                if (idx >= lines.Count)
+                    return false;
+
+                var line = lines[idx];
+                return line.Type != Models.TextDiffLineType.Indicator && line.Type != Models.TextDiffLineType.None;
             }
 
-            var lines = GetLines();
+            return true;
+        }
 
+        private async Task CopyWithoutIndicatorsAsync()
+        {
+            var selection = TextArea.Selection;
             var startPosition = selection.StartPosition;
             var endPosition = selection.EndPosition;
 
@@ -832,13 +907,11 @@ namespace SourceGit.Views
 
             if (startIdx == endIdx)
             {
-                if (lines[startIdx].Type is Models.TextDiffLineType.Indicator or Models.TextDiffLineType.None)
-                    await App.CopyTextAsync(string.Empty);
-                else
-                    await App.CopyTextAsync(SelectedText);
+                await this.CopyTextAsync(SelectedText);
                 return;
             }
 
+            var lines = GetLines();
             var builder = new StringBuilder();
             for (var i = startIdx; i <= endIdx && i <= lines.Count - 1; i++)
             {
@@ -875,9 +948,50 @@ namespace SourceGit.Views
                 builder.Append(line.Content).Append('\n');
             }
 
-            await App.CopyTextAsync(builder.ToString());
+            await this.CopyTextAsync(builder.ToString());
         }
 
+        private async Task CopyAsPatchAsync()
+        {
+            if (DataContext is not ViewModels.TextDiffContext { Data: { } diff, Option: { } option } ctx)
+                return;
+
+            var selection = TextArea.Selection;
+            var startPosition = selection.StartPosition;
+            var endPosition = selection.EndPosition;
+
+            if (startPosition.Location > endPosition.Location)
+                (startPosition, endPosition) = (endPosition, startPosition);
+
+            var maxIdx = GetLines().Count - 1;
+            var startIdx = Math.Min(startPosition.Line - 1, maxIdx);
+            var endIdx = Math.Min(endPosition.Line - 1, maxIdx);
+            var isCombined = true;
+            if (ctx is ViewModels.TwoSideTextDiff twoSides)
+            {
+                isCombined = false;
+                twoSides.GetCombinedRangeForSingleSide(ref startIdx, ref endIdx, IsOld);
+            }
+
+            var patch = new Models.PatchGenerator(option, diff, startIdx, endIdx, isCombined, IsOld);
+            if (!patch.IsValid)
+            {
+                Models.Notification.Send(null, "You should select at lease one changed line!", true);
+                return;
+            }
+
+            var tmpFile = Path.GetTempFileName();
+            patch.Generate(tmpFile, false);
+
+            var patchText = File.ReadAllText(tmpFile);
+            File.Delete(tmpFile);
+            await this.CopyTextAsync(patchText);
+        }
+
+        private string _fileName = string.Empty;
+        private bool _isOld = false;
+        private ViewModels.TextDiffSelectedChunk _selectedChunk = null;
+        private ViewModels.BlockNavigation _blockNavigation = null;
         private bool _execSizeChanged;
         private TextMate.Installation _textMate;
         private TextLocation _lastSelectStart = TextLocation.Empty;
@@ -899,6 +1013,8 @@ namespace SourceGit.Views
         protected override void OnLoaded(RoutedEventArgs e)
         {
             base.OnLoaded(e);
+
+            ApplyTemplate();
 
             _scrollViewer = this.FindDescendantOfType<ScrollViewer>();
             if (_scrollViewer != null)
@@ -935,9 +1051,6 @@ namespace SourceGit.Views
                         builder.Append(line.Content);
                     }
 
-                    if (line.NoNewLineEndOfFile)
-                        builder.Append("\u26D4");
-
                     builder.Append('\n');
                 }
 
@@ -957,6 +1070,9 @@ namespace SourceGit.Views
                 return;
 
             var view = TextArea.TextView;
+            if (!view.VisualLinesValid)
+                return;
+
             var selection = TextArea.Selection;
             if (!selection.IsEmpty)
             {
@@ -1085,6 +1201,8 @@ namespace SourceGit.Views
         {
             base.OnLoaded(e);
 
+            ApplyTemplate();
+
             _scrollViewer = this.FindDescendantOfType<ScrollViewer>();
             if (_scrollViewer != null)
             {
@@ -1125,9 +1243,6 @@ namespace SourceGit.Views
                         builder.Append(line.Content);
                     }
 
-                    if (line.NoNewLineEndOfFile)
-                        builder.Append("\u26D4");
-
                     builder.Append('\n');
                 }
 
@@ -1145,6 +1260,9 @@ namespace SourceGit.Views
                 return;
 
             var view = TextArea.TextView;
+            if (!view.VisualLinesValid)
+                return;
+
             var lines = IsOld ? diff.Old : diff.New;
             var selection = TextArea.Selection;
             if (!selection.IsEmpty)
@@ -1287,15 +1405,6 @@ namespace SourceGit.Views
             set => SetValue(DeletedLineBrushProperty, value);
         }
 
-        public static readonly StyledProperty<ViewModels.TextLineRange> DisplayRangeProperty =
-            AvaloniaProperty.Register<TextDiffViewMinimap, ViewModels.TextLineRange>(nameof(DisplayRange));
-
-        public ViewModels.TextLineRange DisplayRange
-        {
-            get => GetValue(DisplayRangeProperty);
-            set => SetValue(DisplayRangeProperty, value);
-        }
-
         public static readonly StyledProperty<Color> DisplayRangeColorProperty =
             AvaloniaProperty.Register<TextDiffViewMinimap, Color>(nameof(DisplayRangeColor), Colors.RoyalBlue);
 
@@ -1305,13 +1414,16 @@ namespace SourceGit.Views
             set => SetValue(DisplayRangeColorProperty, value);
         }
 
-        static TextDiffViewMinimap()
+        public static readonly DirectProperty<TextDiffViewMinimap, ViewModels.TextLineRange> DisplayRangeProperty =
+            AvaloniaProperty.RegisterDirect<TextDiffViewMinimap, ViewModels.TextLineRange>(
+                nameof(DisplayRange),
+                static o => o.DisplayRange,
+                static (o, v) => o.DisplayRange = v);
+
+        public ViewModels.TextLineRange DisplayRange
         {
-            AffectsRender<TextDiffViewMinimap>(
-                AddedLineBrushProperty,
-                DeletedLineBrushProperty,
-                DisplayRangeProperty,
-                DisplayRangeColorProperty);
+            get => _displayRange;
+            set => SetAndRaise(DisplayRangeProperty, ref _displayRange, value);
         }
 
         public override void Render(DrawingContext context)
@@ -1347,6 +1459,17 @@ namespace SourceGit.Views
             context.DrawRectangle(brush, null, rect);
             context.DrawLine(pen, rect.TopLeft, rect.TopRight);
             context.DrawLine(pen, rect.BottomLeft, rect.BottomRight);
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+
+            if (change.Property == AddedLineBrushProperty ||
+                change.Property == DeletedLineBrushProperty ||
+                change.Property == DisplayRangeColorProperty ||
+                change.Property == DisplayRangeProperty)
+                InvalidateVisual();
         }
 
         protected override void OnDataContextChanged(EventArgs e)
@@ -1423,17 +1546,22 @@ namespace SourceGit.Views
                 context.DrawRectangle(brush, null, new Rect(x, y, width, h));
             }
         }
+
+        private ViewModels.TextLineRange _displayRange = null;
     }
 
     public partial class TextDiffView : UserControl
     {
-        public static readonly StyledProperty<ViewModels.TextDiffSelectedChunk> SelectedChunkProperty =
-            AvaloniaProperty.Register<TextDiffView, ViewModels.TextDiffSelectedChunk>(nameof(SelectedChunk));
+        public static readonly DirectProperty<TextDiffView, ViewModels.TextDiffSelectedChunk> SelectedChunkProperty =
+            AvaloniaProperty.RegisterDirect<TextDiffView, ViewModels.TextDiffSelectedChunk>(
+                nameof(SelectedChunk),
+                static o => o.SelectedChunk,
+                static (o, v) => o.SelectedChunk = v);
 
         public ViewModels.TextDiffSelectedChunk SelectedChunk
         {
-            get => GetValue(SelectedChunkProperty);
-            set => SetValue(SelectedChunkProperty, value);
+            get => _selectedChunk;
+            set => SetAndRaise(SelectedChunkProperty, ref _selectedChunk, value);
         }
 
         public TextDiffView()
@@ -1449,14 +1577,27 @@ namespace SourceGit.Views
             {
                 if (SelectedChunk is { } chunk)
                 {
+                    var syscmd = OperatingSystem.IsMacOS() ? "Cmd" : "Ctrl";
                     var top = chunk.Y + 4;
-                    var right = (chunk.Combined || !chunk.IsOldSide) ? 26 : (Bounds.Width * 0.5f) + 26;
+                    var right = 28.0;
+                    if (!chunk.Combined && chunk.IsOldSide)
+                    {
+                        var left = this.FindDescendantOfType<SingleSideTextDiffPresenter>()?.Bounds.Width ?? 0.0;
+                        right = Bounds.Width - left + 16;
+                    }
+
                     Popup.Margin = new Thickness(0, top, right, 0);
                     Popup.IsVisible = true;
+                    BtnStageChunk.HotKey = KeyGesture.Parse($"{syscmd}+S");
+                    BtnUnstageChunk.HotKey = KeyGesture.Parse($"{syscmd}+U");
+                    BtnDiscardChunk.HotKey = KeyGesture.Parse($"{syscmd}+D");
                 }
                 else
                 {
                     Popup.IsVisible = false;
+                    BtnStageChunk.HotKey = null;
+                    BtnUnstageChunk.HotKey = null;
+                    BtnDiscardChunk.HotKey = null;
                 }
             }
         }
@@ -1471,109 +1612,82 @@ namespace SourceGit.Views
 
         private async void OnStageChunk(object _1, RoutedEventArgs _2)
         {
-            if (DataContext is not ViewModels.TextDiffContext { SelectedChunk: { } chunk, Data: { } diff, Option: { IsUnstaged: true, WorkingCopyChange: { } change } } vm)
+            if (DataContext is not ViewModels.TextDiffContext { SelectedChunk: { } chunk, Data: { } diff, Option: { } option } vm)
                 return;
 
-            var selection = diff.MakeSelection(chunk.StartIdx + 1, chunk.EndIdx + 1, chunk.Combined, chunk.IsOldSide);
-            if (!selection.HasChanges)
+            if (!option.IsLocalChange || !option.IsUnstaged)
                 return;
 
-            var repoView = this.FindAncestorOfType<Repository>();
-            if (repoView?.DataContext is not ViewModels.Repository repo)
+            var patch = new Models.PatchGenerator(option, diff, chunk.StartIdx, chunk.EndIdx, chunk.Combined, chunk.IsOldSide);
+            if (!patch.IsValid)
                 return;
 
-            using var lockWatcher = repo.LockWatcher();
+            if (this.FindAncestorOfType<Repository>()?.DataContext is not ViewModels.Repository repo)
+                return;
 
             var tmpFile = Path.GetTempFileName();
-            if (change.WorkTree == Models.ChangeState.Untracked)
-            {
-                diff.GenerateNewPatchFromSelection(change, null, selection, false, tmpFile);
-            }
-            else if (chunk.Combined)
-            {
-                var treeGuid = await new Commands.QueryStagedFileBlobGuid(repo.FullPath, change.Path).GetResultAsync();
-                diff.GeneratePatchFromSelection(change, treeGuid, selection, false, tmpFile);
-            }
-            else
-            {
-                var treeGuid = await new Commands.QueryStagedFileBlobGuid(repo.FullPath, change.Path).GetResultAsync();
-                diff.GeneratePatchFromSelectionSingleSide(change, treeGuid, selection, false, chunk.IsOldSide, tmpFile);
-            }
+            patch.Generate(tmpFile, false);
 
+            using var lockWatcher = repo.LockWatcher();
             await new Commands.Apply(repo.FullPath, tmpFile, true, "nowarn", "--cache --index").ExecAsync();
-            File.Delete(tmpFile);
 
             vm.BlockNavigation.UpdateByChunk(chunk);
             repo.MarkWorkingCopyDirtyManually();
+            File.Delete(tmpFile);
         }
 
         private async void OnUnstageChunk(object _1, RoutedEventArgs _2)
         {
-            if (DataContext is not ViewModels.TextDiffContext { SelectedChunk: { } chunk, Data: { } diff, Option: { IsUnstaged: false, WorkingCopyChange: { } change } } vm)
+            if (DataContext is not ViewModels.TextDiffContext { SelectedChunk: { } chunk, Data: { } diff, Option: { } option } vm)
                 return;
 
-            var selection = diff.MakeSelection(chunk.StartIdx + 1, chunk.EndIdx + 1, chunk.Combined, chunk.IsOldSide);
-            if (!selection.HasChanges)
+            if (!option.IsLocalChange || option.IsUnstaged)
                 return;
 
-            var repoView = this.FindAncestorOfType<Repository>();
-            if (repoView?.DataContext is not ViewModels.Repository repo)
+            var patch = new Models.PatchGenerator(option, diff, chunk.StartIdx, chunk.EndIdx, chunk.Combined, chunk.IsOldSide);
+            if (!patch.IsValid)
                 return;
+
+            if (this.FindAncestorOfType<Repository>()?.DataContext is not ViewModels.Repository repo)
+                return;
+
+            var tmpFile = Path.GetTempFileName();
+            patch.Generate(tmpFile, true);
 
             using var lockWatcher = repo.LockWatcher();
-
-            var treeGuid = await new Commands.QueryStagedFileBlobGuid(repo.FullPath, change.Path).GetResultAsync();
-            var tmpFile = Path.GetTempFileName();
-            if (change.Index == Models.ChangeState.Added)
-                diff.GenerateNewPatchFromSelection(change, treeGuid, selection, true, tmpFile);
-            else if (chunk.Combined)
-                diff.GeneratePatchFromSelection(change, treeGuid, selection, true, tmpFile);
-            else
-                diff.GeneratePatchFromSelectionSingleSide(change, treeGuid, selection, true, chunk.IsOldSide, tmpFile);
-
             await new Commands.Apply(repo.FullPath, tmpFile, true, "nowarn", "--cache --index --reverse").ExecAsync();
-            File.Delete(tmpFile);
 
             vm.BlockNavigation.UpdateByChunk(chunk);
             repo.MarkWorkingCopyDirtyManually();
+            File.Delete(tmpFile);
         }
 
         private async void OnDiscardChunk(object _1, RoutedEventArgs _2)
         {
-            if (DataContext is not ViewModels.TextDiffContext { SelectedChunk: { } chunk, Data: { } diff, Option: { IsUnstaged: true, WorkingCopyChange: { } change } } vm)
+            if (DataContext is not ViewModels.TextDiffContext { SelectedChunk: { } chunk, Data: { } diff, Option: { } option } vm)
                 return;
 
-            var selection = diff.MakeSelection(chunk.StartIdx + 1, chunk.EndIdx + 1, chunk.Combined, chunk.IsOldSide);
-            if (!selection.HasChanges)
+            if (!option.IsLocalChange || !option.IsUnstaged)
                 return;
 
-            var repoView = this.FindAncestorOfType<Repository>();
-            if (repoView?.DataContext is not ViewModels.Repository repo)
+            var patch = new Models.PatchGenerator(option, diff, chunk.StartIdx, chunk.EndIdx, chunk.Combined, chunk.IsOldSide);
+            if (!patch.IsValid)
                 return;
 
-            using var lockWatcher = repo.LockWatcher();
+            if (this.FindAncestorOfType<Repository>()?.DataContext is not ViewModels.Repository repo)
+                return;
 
             var tmpFile = Path.GetTempFileName();
-            if (change.Index == Models.ChangeState.Added)
-            {
-                diff.GenerateNewPatchFromSelection(change, null, selection, true, tmpFile);
-            }
-            else if (chunk.Combined)
-            {
-                var treeGuid = await new Commands.QueryStagedFileBlobGuid(repo.FullPath, change.Path).GetResultAsync();
-                diff.GeneratePatchFromSelection(change, treeGuid, selection, true, tmpFile);
-            }
-            else
-            {
-                var treeGuid = await new Commands.QueryStagedFileBlobGuid(repo.FullPath, change.Path).GetResultAsync();
-                diff.GeneratePatchFromSelectionSingleSide(change, treeGuid, selection, true, chunk.IsOldSide, tmpFile);
-            }
+            patch.Generate(tmpFile, true);
 
+            using var lockWatcher = repo.LockWatcher();
             await new Commands.Apply(repo.FullPath, tmpFile, true, "nowarn", "--reverse").ExecAsync();
-            File.Delete(tmpFile);
 
             vm.BlockNavigation.UpdateByChunk(chunk);
             repo.MarkWorkingCopyDirtyManually();
+            File.Delete(tmpFile);
         }
+
+        private ViewModels.TextDiffSelectedChunk _selectedChunk = null;
     }
 }

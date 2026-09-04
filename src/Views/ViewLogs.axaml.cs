@@ -1,3 +1,4 @@
+using System;
 using Avalonia.Controls;
 using Avalonia.Input;
 
@@ -11,6 +12,14 @@ namespace SourceGit.Views
             InitializeComponent();
         }
 
+        protected override void OnOpened(EventArgs e)
+        {
+            base.OnOpened(e);
+
+            if (DataContext is ViewModels.ViewLogs vm && vm.Logs.Count > 0)
+                vm.SelectedLog = vm.Logs[0];
+        }
+
         private void OnLogContextRequested(object sender, ContextRequestedEventArgs e)
         {
             if (sender is not Grid { DataContext: ViewModels.CommandLog log } grid || DataContext is not ViewModels.ViewLogs vm)
@@ -18,16 +27,16 @@ namespace SourceGit.Views
 
             var copy = new MenuItem();
             copy.Header = App.Text("ViewLogs.CopyLog");
-            copy.Icon = App.CreateMenuIcon("Icons.Copy");
+            copy.Icon = this.CreateMenuIcon("Icons.Copy");
             copy.Click += async (_, ev) =>
             {
-                await App.CopyTextAsync(log.Content);
+                await this.CopyTextAsync(log.Content);
                 ev.Handled = true;
             };
 
             var rm = new MenuItem();
             rm.Header = App.Text("ViewLogs.Delete");
-            rm.Icon = App.CreateMenuIcon("Icons.Clear");
+            rm.Icon = this.CreateMenuIcon("Icons.Clear");
             rm.Click += (_, ev) =>
             {
                 vm.Logs.Remove(log);
